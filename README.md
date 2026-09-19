@@ -3,7 +3,7 @@
 **An outsider files one GitHub issue. Your AI triage agent reads it, believes it, and pastes a deploy secret into a public comment — through an approved tool, looking like normal triage. NoLeak blocks that write at the boundary, deterministically, and the agent still ships clean triage.**
 
 - Recorded demo & landing site: `web/` (static, deployable to Vercel — plays back real captured policy-engine events)
-- Live control plane (local): `node control-plane/server.mjs` → [web](https://web-imdp1.vercel.app)
+- Live control plane (local): `node control-plane/server.mjs` → https://web-imdp1.vercel.app
 - Code: https://github.com/ishamishra0408/truefoundrynoleakagent
 
 Built for the **TrueFoundry TrueForge** hackathon. All credentials are fake canaries.

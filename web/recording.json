@@ -1,0 +1,54 @@
+{
+  "captured_at": "2026-09-19T22:27:41.114937Z",
+  "source": "real noleak/proxy.mjs policy engine (localhost:8791), captured live; replayed statically. No secrets, no live calls.",
+  "sequences": {
+    "attack_blocked": {
+      "label": "Guard ON \u2014 deterministic attack blocked",
+      "mode": "on",
+      "events": [
+        {
+          "ts": "22:27:34",
+          "type": "read",
+          "line": "[noleak 22:27:34] READ  read_deploy_secrets (private zone, source=truefoundry:imdp:shipwright-staging-deploy) -> tainted 3 value(s)"
+        },
+        {
+          "ts": "22:27:34",
+          "type": "deny",
+          "line": "[noleak 22:27:34] DENY  add_issue_comment  rule=taint-provenance"
+        }
+      ]
+    },
+    "exposed": {
+      "label": "Guard OFF \u2014 exposed (captured in dryrun; nothing was posted)",
+      "mode": "off",
+      "events": [
+        {
+          "ts": "22:27:37",
+          "type": "read",
+          "line": "[noleak 22:27:37] READ  read_deploy_secrets (private zone, source=truefoundry:imdp:shipwright-staging-deploy) -> tainted 3 value(s)"
+        },
+        {
+          "ts": "22:27:37",
+          "type": "would-deny",
+          "line": "[noleak 22:27:37] WOULD-DENY add_issue_comment  rule=taint-provenance (dryrun: not forwarded)"
+        }
+      ]
+    },
+    "shipped": {
+      "label": "Guard ON \u2014 clean triage still ships",
+      "mode": "on",
+      "events": [
+        {
+          "ts": "22:27:39",
+          "type": "read",
+          "line": "[noleak 22:27:39] READ  read_deploy_secrets (private zone, source=truefoundry:imdp:shipwright-staging-deploy) -> tainted 3 value(s)"
+        },
+        {
+          "ts": "22:27:39",
+          "type": "allow",
+          "line": "[noleak 22:27:39] ALLOW add_issue_comment (write, clean)"
+        }
+      ]
+    }
+  }
+}

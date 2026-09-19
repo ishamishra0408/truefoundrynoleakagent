@@ -1,0 +1,20 @@
+{
+  "name": "noleak-containment",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "scripts": {
+    "proxy": "node noleak/proxy.mjs",
+    "test": "node noleak/policy.test.mjs && node noleak/benign.test.mjs && node noleak/latency.test.mjs",
+    "test:policy": "node noleak/policy.test.mjs",
+    "test:benign": "node noleak/benign.test.mjs",
+    "bench": "node noleak/latency.test.mjs",
+    "selftest": "node noleak/selftest.mjs",
+    "attack": "node noleak/attack.mjs",
+    "verify": "bash scripts/verify.sh",
+    "take-rate": "bash scripts/take-rate.sh 10"
+  }
+}

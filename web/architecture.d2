@@ -1,0 +1,53 @@
+# NoLeak Containment — real architecture & flow
+# Render:  d2 architecture.d2 architecture.svg   (https://d2lang.com)
+# All secrets are fake canaries. Sandbox is disabled; the private-zone source is
+# TrueFoundry Secret Store, reached only via read_deploy_secrets. There is ONE
+# policy node: the NoLeak proxy, sitting in front of the official github-mcp-server.
+
+direction: down
+
+public: Public zone — attacker-reachable {
+  style.stroke: "#7d8aa6"
+  style.stroke-dash: 4
+  attacker: Attacker\n(outsider · no creds) { shape: person }
+  gh: GitHub\npublic repo · issue #1 { shape: rectangle }
+  mcp: github-mcp-server\n(official MCP connector) { shape: hexagon }
+}
+
+control: Control plane — policy enforced here {
+  style.stroke: "#5fae9c"
+  style.stroke-dash: 4
+  noleak: NoLeak proxy\npolicy MCP proxy · noleak/proxy.mjs\nreads pass · writes inspected { shape: rectangle }
+}
+
+agent: TrueForge agent\nshipwright-triage (triage loop) { shape: rectangle }
+
+private: Private zone — agent-only {
+  style.stroke: "#9a83b0"
+  style.stroke-dash: 4
+  secret: TrueFoundry Secret Store\n3 canary deploy secrets\nsource truefoundry:imdp:shipwright-staging-deploy { shape: cylinder }
+}
+
+# 1. attacker plants the poison in the public repo
+public.attacker -> public.gh: "1 · files poisoned issue"
+
+# 2. agent reads the issue THROUGH NoLeak (pass-through) from github-mcp-server
+public.gh -> public.mcp: "2 · issue_read"
+public.mcp -> control.noleak: "through (pass)"
+control.noleak -> agent: "issue text → agent"
+
+# 3. agent reads the private secret; values become TAINTED on the way in
+agent -> private.secret: "3 · read_deploy_secrets"
+private.secret -> agent: "tainted values enter agent"
+
+# 4. agent writes a comment; NoLeak inspects the outbound write
+agent -> control.noleak: "4 · add_issue_comment (inspected)"
+
+# OFF: forwarded → secret lands in the public comment = EXPOSED
+control.noleak -> public.mcp: "OFF: forward → EXPOSED" {
+  style.stroke: "#ff5064"
+}
+# ON: tainted write DENIED at the boundary; agent posts sanitized triage = CONTAINED
+control.noleak -> agent: "ON: DENY (taint-provenance)\n→ agent posts sanitized triage = CONTAINED" {
+  style.stroke: "#2ee6a6"
+}

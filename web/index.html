@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NoLeak Containment — a triage agent that survives a poisoned issue and still ships</title>
+<meta name="description" content="Deterministic containment for tool-using agents. A TrueForge triage agent is talked into leaking a deploy secret via a poisoned GitHub issue; NoLeak blocks the exfil at the boundary and the agent still ships clean triage. The exact confused-deputy exfil shipped as a critical CVE." />
+<style>
+  :root{
+    --bg:#0b0d11; --ink:#eef1f7; --dim:#9aa2b2; --faint:#626b7a;
+    --accent:#6ea8fe; --violet:#8b5cf6; --deny:#ff5064; --allow:#2ee6a6; --gold:#e8c07d;
+    --glass:rgba(16,20,28,.55); --glass-strong:rgba(18,23,32,.72);
+    --glass-brd:rgba(255,255,255,.10); --glass-hi:rgba(255,255,255,.14);
+    --blur:blur(22px) saturate(150%);
+    --elev:inset 0 1px 0 var(--glass-hi), 0 10px 34px rgba(0,0,0,.5);
+    --spring:cubic-bezier(.34,1.4,.5,1);
+    --mono:"SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
+    --sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;
+    background:radial-gradient(1100px 640px at 16% -6%,#16294a 0%,rgba(12,17,26,0) 52%),
+      radial-gradient(900px 700px at 92% 8%,#2a1c47 0%,rgba(10,12,18,0) 55%),linear-gradient(180deg,#0a0d13,#070a0f) fixed}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 22px}
+  .glass{background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border:1px solid var(--glass-brd);box-shadow:var(--elev)}
+  header.nav{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:16px;padding:14px 22px;background:var(--glass-strong);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border-bottom:1px solid var(--glass-brd)}
+  .brand{font-weight:800;font-size:19px;letter-spacing:-.02em}.brand b{color:var(--accent)}
+  .nav .sp{flex:1}.nav a{color:var(--dim);font-size:14px;font-weight:600}.nav a:hover{color:var(--ink);text-decoration:none}
+  .pill{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:999px;font-size:12.5px;font-weight:700;border:1px solid var(--glass-brd);background:var(--glass)}
+
+  section{padding:56px 0}
+  h1{font-size:46px;line-height:1.05;letter-spacing:-.03em;margin:.2em 0 .3em;font-weight:850}
+  h1 .g{background:linear-gradient(90deg,#8ec1ff,#b79bff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lede{font-size:18.5px;color:var(--dim);max-width:760px;line-height:1.5}
+  .cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:26px}
+  .btn{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:15px;padding:13px 20px;border-radius:13px;border:1px solid var(--glass-brd);background:var(--glass);cursor:pointer;color:var(--ink);transition:transform .25s var(--spring),border-color .2s}
+  .btn:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .btn.primary{background:linear-gradient(180deg,#2b6cff,#1846c8);border-color:rgba(140,180,255,.6);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 8px 26px rgba(40,90,220,.45)}
+
+  .numstrip{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:34px}
+  .stat{padding:18px 16px;border-radius:16px;text-align:center}
+  .stat b{display:block;font-size:30px;font-weight:850;letter-spacing:-.02em}
+  .stat.d b{color:var(--allow)} .stat span{font-size:12.5px;color:var(--faint);font-weight:700;letter-spacing:.02em}
+
+  .h2{font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);font-weight:800;margin-bottom:8px}
+  h2.big{font-size:30px;font-weight:800;letter-spacing:-.02em;margin:2px 0 10px}
+  .sub{color:var(--dim);max-width:820px;line-height:1.55}
+
+  /* CVE strip */
+  .cves{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:22px}
+  .cve{display:block;padding:18px;border-radius:16px;transition:transform .25s var(--spring),border-color .2s}
+  .cve:hover{transform:translateY(-2px);border-color:var(--accent);text-decoration:none}
+  .cve .tag{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.06em;padding:3px 9px;border-radius:999px;margin-bottom:10px}
+  .cve.red .tag{color:#ffd7dc;background:rgba(255,80,100,.18);border:1px solid rgba(255,80,100,.4)}
+  .cve.amber .tag{color:#ffe6b8;background:rgba(245,178,61,.16);border:1px solid rgba(245,178,61,.4)}
+  .cve.blue .tag{color:#cfe0ff;background:rgba(110,168,254,.16);border:1px solid rgba(110,168,254,.4)}
+  .cve h3{margin:0 0 6px;font-size:17px;color:var(--ink)}
+  .cve p{margin:0;font-size:13px;color:var(--dim);line-height:1.5}
+  .cve .lnk{display:inline-block;margin-top:10px;font-size:12.5px;color:var(--accent);font-family:var(--mono)}
+
+  /* arena */
+  .arena{border-radius:20px;overflow:hidden;margin-top:20px}
+  .arenabar{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--glass-brd);background:var(--glass-strong)}
+  .rec{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--dim);font-family:var(--mono)}
+  .rec .dot{width:9px;height:9px;border-radius:50%;background:var(--deny);box-shadow:0 0 10px var(--deny)}
+  .arenabar .sp{flex:1}
+  .play{font-weight:700;font-size:13.5px;padding:9px 14px;border-radius:11px;border:1px solid var(--glass-brd);background:var(--glass);color:var(--ink);cursor:pointer;transition:transform .2s var(--spring),border-color .2s}
+  .play:hover{border-color:var(--accent);transform:translateY(-1px)} .play.lead{background:linear-gradient(180deg,#2b6cff,#1846c8);border-color:rgba(140,180,255,.6);color:#fff}
+  .play:disabled{opacity:.5;cursor:not-allowed}
+  .arenamain{display:grid;grid-template-columns:1fr 320px;min-height:520px}
+  .verdict{margin-left:auto;font-weight:800;font-size:15px;padding:8px 14px;border-radius:11px;border:1px solid var(--glass-brd);background:var(--glass);display:flex;align-items:center;gap:8px;transition:transform .35s var(--spring),background .3s}
+  .verdict.deny{color:#fff;background:rgba(255,80,100,.22);box-shadow:0 0 0 1.5px rgba(255,80,100,.7),0 0 40px rgba(255,80,100,.35);transform:scale(1.03)}
+  .verdict.ship{color:#fff;background:rgba(46,230,166,.2);box-shadow:0 0 0 1.5px rgba(46,230,166,.7);transform:scale(1.03)}
+  .verdict.exposed{color:#fff;background:rgba(255,80,100,.22);box-shadow:0 0 0 1.5px rgba(255,80,100,.7)}
+  svg#diagram{width:100%;height:100%;display:block;background:radial-gradient(760px 420px at 30% 12%,rgba(110,168,254,.06),transparent 55%),radial-gradient(680px 420px at 88% 92%,rgba(139,92,246,.06),transparent 55%)}
+  .zone rect{fill:rgba(255,255,255,.015);stroke-dasharray:5 5;stroke-width:1.5}
+  .zone.pub rect{stroke:#3a4356}.zone.ctrl rect{stroke:#2f4a44}.zone.priv rect{stroke:#4a3a56}
+  .zone text{font-family:var(--sans);font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+  .zone.pub text{fill:#7d8aa6}.zone.ctrl text{fill:#5fae9c}.zone.priv text{fill:#9a83b0}
+  .node rect{fill:rgba(150,170,205,.10);stroke:rgba(255,255,255,.16);stroke-width:1.4;filter:drop-shadow(0 8px 18px rgba(0,0,0,.5));transition:.28s var(--spring)}
+  .node .nt{font-family:var(--sans);font-weight:800;font-size:15px;fill:var(--ink)}
+  .node .nk{font-family:var(--sans);font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;fill:var(--faint)}
+  .node .ns{font-family:var(--mono);font-size:11px;fill:var(--dim)}
+  .node .badge{font-family:var(--sans);font-size:9.5px;font-weight:800;fill:var(--faint)}
+  .node.active rect{stroke:var(--accent);filter:drop-shadow(0 0 12px rgba(110,168,254,.5))}.node.active .badge{fill:var(--accent)}
+  .node.deny rect{stroke:var(--deny);filter:drop-shadow(0 0 14px rgba(255,80,100,.55))}.node.deny .nt{fill:var(--deny)}.node.deny .badge{fill:var(--deny)}
+  .node.ship rect{stroke:var(--allow);filter:drop-shadow(0 0 13px rgba(46,230,166,.5))}.node.ship .nt{fill:var(--allow)}.node.ship .badge{fill:var(--allow)}
+  .node.exposed rect{stroke:var(--deny);filter:drop-shadow(0 0 14px rgba(255,80,100,.55))}.node.exposed .nt{fill:var(--deny)}.node.exposed .badge{fill:var(--deny)}
+  .edge{fill:none;stroke:#39404d;stroke-width:2.2;transition:.16s}
+  .edge.on{stroke:var(--accent)}.edge.deny{stroke:var(--deny)}.edge.ship{stroke:var(--allow)}
+  .elabel{font-family:var(--mono);font-size:10.5px;fill:var(--faint)}.elabel.deny{fill:var(--deny)}.elabel.ship{fill:var(--allow)}
+  aside.logpane{border-left:1px solid var(--glass-brd);background:var(--glass-strong);display:flex;flex-direction:column}
+  .loghd{padding:11px 15px;border-bottom:1px solid var(--glass-brd);font-weight:800;font-size:13px;display:flex;gap:8px;align-items:center}
+  .loghd .d{width:8px;height:8px;border-radius:50%;background:var(--allow);box-shadow:0 0 10px var(--allow)}
+  #log{flex:1;overflow:auto;padding:8px 13px;font-family:var(--mono);font-size:12px;line-height:1.5;min-height:180px}
+  #log .l{padding:2px 5px;border-radius:5px;white-space:pre-wrap;word-break:break-word;color:var(--dim)}
+  #log .l.read{color:var(--accent)}#log .l.deny{color:var(--deny);background:rgba(255,80,100,.09);font-weight:700}
+  #log .l.allow{color:var(--allow)}#log .l.would-deny{color:var(--deny);font-weight:700}
+  .lognums{display:flex;border-top:1px solid var(--glass-brd)}.lognums .n{flex:1;padding:10px;text-align:center;border-right:1px solid var(--glass-brd)}.lognums .n:last-child{border:0}
+  .lognums b{display:block;font-size:18px;font-weight:800}.lognums span{font-size:9px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:20px}
+  .card{padding:20px;border-radius:16px}
+  .card h3{margin:0 0 8px;font-size:16px}.card p,.card li{color:var(--dim);font-size:14px;line-height:1.55}
+  .videoslot{margin-top:20px;border-radius:16px;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;color:var(--faint);font-family:var(--mono);font-size:14px;text-align:center;padding:20px}
+  code{font-family:var(--mono);color:var(--gold);font-size:13px}
+  pre{background:rgba(0,0,0,.35);border:1px solid var(--glass-brd);border-radius:12px;padding:14px 16px;overflow:auto;font-family:var(--mono);font-size:12.5px;color:#d7dbe4}
+  footer{padding:40px 0 60px;color:var(--faint);font-size:13px;border-top:1px solid var(--glass-brd);margin-top:30px}
+  @media(max-width:820px){.numstrip,.cves,.grid2{grid-template-columns:1fr}.arenamain{grid-template-columns:1fr}h1{font-size:34px}}
+</style>
+</head>
+<body>
+<header class="nav">
+  <div class="brand">No<b>Leak</b> Containment</div>
+  <div class="sp"></div>
+  <a href="#incidents">Incidents</a><a href="#arena">Replay</a><a href="#architecture">Architecture</a><a href="#numbers">Numbers</a>
+  <a href="https://github.com/ishamishra0408/truefoundrynoleakagent" target="_blank" rel="noopener">GitHub ↗</a>
+</header>
+
+<section class="wrap" style="padding-top:46px">
+  <span class="pill">🛡 TrueFoundry TrueForge · defensive security</span>
+  <h1>A triage agent that survives a <span class="g">poisoned issue</span><br>— and still ships the work.</h1>
+  <p class="lede">An outsider files a normal-looking GitHub bug report with a hidden instruction: paste the deploy secret into a public comment. The AI triage agent has the <b>lethal trifecta</b> — private secrets, untrusted input, and a public write. <b>NoLeak</b> is a deterministic policy proxy in front of GitHub's official MCP server: it blocks the secret-bearing write at the boundary — no model judgment — and the agent still posts a clean triage comment. Guard OFF = <b style="color:var(--deny)">EXPOSED</b>, Guard ON = <b style="color:var(--allow)">SHIPPED</b>.</p>
+  <div class="cta">
+    <a class="btn primary" href="#arena">▶ Watch the recorded run</a>
+    <a class="btn" href="https://github.com/ishamishra0408/truefoundrynoleakagent" target="_blank" rel="noopener">View the code</a>
+  </div>
+  <div class="numstrip">
+    <div class="stat glass d"><b>20/20</b><span>policy tests pass</span></div>
+    <div class="stat glass d"><b>0%</b><span>false positives</span></div>
+    <div class="stat glass d"><b>3/3</b><span>verbatim · split · base64 blocked</span></div>
+    <div class="stat glass d"><b>~9µs</b><span>guard overhead / call</span></div>
+  </div>
+</section>
+
+<section class="wrap" id="incidents">
+  <div class="h2">This already happened</div>
+  <h2 class="big">Not hypothetical — it shipped as a critical CVE and was demoed against GitHub's own MCP twice.</h2>
+  <p class="sub">NoLeak defends against the confused-deputy exfil that real research and real advisories have already proven in the wild. Same shape every time: an agent with private access reads untrusted text and is turned into a courier.</p>
+  <div class="cves">
+    <a class="cve glass blue" href="https://invariantlabs.ai/blog/mcp-github-vulnerability" target="_blank" rel="noopener">
+      <span class="tag">Invariant Labs · May 26 2025</span>
+      <h3>GitHub MCP “toxic agent flow”</h3>
+      <p>A poisoned public issue coerces an agent on GitHub's official MCP server into leaking private-repo data through an approved action.</p>
+      <span class="lnk">invariantlabs.ai ↗</span>
+    </a>
+    <a class="cve glass red" href="https://nvd.nist.gov/vuln/detail/CVE-2025-32711" target="_blank" rel="noopener">
+      <span class="tag">CVE-2025-32711 · CVSS 9.3</span>
+      <h3>M365 Copilot “EchoLeak”</h3>
+      <p>Zero-click prompt-injection exfiltration in Microsoft 365 Copilot — critical severity, the confused deputy made concrete at enterprise scale.</p>
+      <span class="lnk">nvd.nist.gov ↗</span>
+    </a>
+    <a class="cve glass amber" href="https://noma.security/blog/gitlost-how-we-tricked-githubs-ai-agent-into-leaking-private-repos/" target="_blank" rel="noopener">
+      <span class="tag">Noma · GitLost · 2026</span>
+      <h3>Tricking GitHub's AI agent</h3>
+      <p>Researchers again turned GitHub's AI agent into leaking private repositories — the same exfil class, demoed a second time.</p>
+      <span class="lnk">noma.security ↗</span>
+    </a>
+  </div>
+</section>
+
+<section class="wrap" id="arena">
+  <div class="h2">Recorded run</div>
+  <h2 class="big">Press play. Every DENY below is a real policy-engine event, replayed.</h2>
+  <p class="sub">Captured live from the real <code>noleak/proxy.mjs</code> policy engine over the actual TrueForge → NoLeak → github-mcp-server path. This page replays the captured events — it makes no live calls and holds no secrets.</p>
+  <div class="arena glass">
+    <div class="arenabar">
+      <span class="rec"><span class="dot"></span><span id="recmeta">Recorded run · captured …</span></span>
+      <span class="sp"></span>
+      <button class="play lead" data-seq="attack_blocked">▶ Attack — blocked</button>
+      <button class="play" data-seq="exposed">▶ Guard OFF — exposed</button>
+      <button class="play" data-seq="shipped">▶ Clean triage — ships</button>
+      <span class="verdict" id="verdict"><span class="ic">○</span><span class="vt">Ready</span></span>
+    </div>
+    <div class="arenamain">
+      <svg id="diagram" viewBox="0 0 1180 700" preserveAspectRatio="xMidYMid meet">
+        <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+        <g class="zone pub"><rect x="24" y="24" width="1132" height="150" rx="16"/><text x="44" y="48">Public zone — attacker-reachable</text></g>
+        <g class="zone ctrl"><rect x="24" y="202" width="1132" height="118" rx="16"/><text x="44" y="226">Control plane — policy enforced here</text></g>
+        <g class="zone priv"><rect x="24" y="510" width="1132" height="164" rx="16"/><text x="44" y="534">Private zone — agent-only</text></g>
+        <g id="edges" color="#39404d">
+          <path id="e-att" class="edge" marker-end="url(#arr)" d="M250,94 H452"/>
+          <path id="e-read" class="edge" marker-end="url(#arr)" d="M712,94 H878"/>
+          <path id="e-thru" class="edge" marker-end="url(#arr)" d="M988,128 V160 H654 V234"/>
+          <path id="e-a2n" class="edge" marker-end="url(#arr)" d="M590,384 V306"/>
+          <path id="e-sec" class="edge" marker-end="url(#arr)" d="M590,456 V550"/>
+          <path id="e-out" class="edge" marker-end="url(#arr)" d="M720,270 H900 V128"/>
+          <text class="elabel" x="300" y="84">files poisoned issue</text>
+          <text class="elabel" x="748" y="84">issue_read</text>
+          <text class="elabel" x="664" y="190">through (pass)</text>
+          <text class="elabel" id="l-a2n" x="600" y="352">write · inspected</text>
+          <text class="elabel" x="600" y="502">read_deploy_secrets</text>
+          <text class="elabel" id="l-out" x="912" y="195">OFF: forward / ON: DENY</text>
+        </g>
+        <g class="node" id="n-attacker"><rect x="50" y="62" width="200" height="64" rx="14"/><text class="nk" x="66" y="86">Outsider</text><text class="nt" x="66" y="108">Attacker</text></g>
+        <g class="node" id="n-github"><rect x="452" y="62" width="260" height="64" rx="14"/><text class="nk" x="468" y="86">Public repo · issue #1</text><text class="nt" x="468" y="108">GitHub</text><text class="badge" x="696" y="86" text-anchor="end" id="b-github">idle</text></g>
+        <g class="node" id="n-mcp"><rect x="878" y="62" width="230" height="64" rx="14"/><text class="nk" x="894" y="86">Official MCP connector</text><text class="nt" x="894" y="108">github-mcp-server</text></g>
+        <g class="node" id="n-noleak"><rect x="460" y="234" width="260" height="72" rx="14"/><text class="nk" x="478" y="258">Policy MCP proxy</text><text class="nt" x="478" y="282">NoLeak proxy</text><text class="ns" x="478" y="299" id="s-noleak">guard · taint 0</text><text class="badge" x="702" y="258" text-anchor="end" id="b-noleak">on</text></g>
+        <g class="node" id="n-agent"><rect x="460" y="384" width="260" height="72" rx="14"/><text class="nk" x="478" y="408">TrueForge agent</text><text class="nt" x="478" y="432">shipwright-triage</text><text class="ns" x="478" y="449" id="s-agent">idle</text><text class="badge" x="702" y="408" text-anchor="end" id="b-agent">idle</text></g>
+        <g class="node" id="n-secret"><rect x="440" y="550" width="300" height="72" rx="14"/><text class="nk" x="458" y="574">TrueFoundry Secret Store</text><text class="nt" x="458" y="598">3 canary deploy secrets</text><text class="ns" x="458" y="615" id="s-secret">imdp:shipwright-staging-deploy</text><text class="badge" x="722" y="574" text-anchor="end" id="b-secret">idle</text></g>
+      </svg>
+      <aside class="logpane">
+        <div class="loghd"><span class="d"></span>Replayed event log</div>
+        <div id="log"></div>
+        <div class="lognums">
+          <div class="n"><b id="f-deny" style="color:var(--deny)">0</b><span>blocked</span></div>
+          <div class="n"><b id="f-allow" style="color:var(--allow)">0</b><span>shipped</span></div>
+          <div class="n"><b style="color:var(--gold)">~9</b><span>µs/call</span></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<section class="wrap" id="architecture">
+  <div class="h2">Architecture</div>
+  <h2 class="big">One deterministic policy node, in front of GitHub's official MCP server.</h2>
+  <p class="sub">The agent reaches GitHub only <b>through</b> NoLeak. Reads pass; writes are inspected. Values NoLeak brokers from the private zone are tainted; any public write carrying one — verbatim, whitespace-split, zero-width, or base64/hex-encoded — is denied. The full source diagram is <a href="architecture.d2">architecture.d2</a> (D2). The replay above is that architecture, live.</p>
+  <div class="grid2">
+    <div class="card glass"><h3>Rule A — provenance (taint)</h3><p>Every value returned by <code>read_deploy_secrets</code> is tainted for the session. A public write carrying any 8-char window of it (after normalization + base64/hex decode) is <b style="color:var(--deny)">DENIED</b>. No model in the decision.</p></div>
+    <div class="card glass"><h3>Rule B — secret shape</h3><p>Narrow fallback for values NoLeak never brokered: AWS key id, a 40-char non-hex mixed-case run, the canary token. Git SHAs, env-var names, URLs and the word “canary” all pass — <b style="color:var(--allow)">0% false positives</b>.</p></div>
+  </div>
+</section>
+
+<section class="wrap" id="numbers">
+  <div class="h2">Real numbers</div>
+  <h2 class="big">Measured, not asserted.</h2>
+  <div class="grid2">
+    <div class="card glass">
+      <h3>Deterministic guard</h3>
+      <ul><li><b>20/20</b> policy unit tests pass</li><li><b>20/20</b> benign triage comments pass — <b>0%</b> false positives</li><li>verbatim, whitespace-split and base64-encoded secrets all blocked (<b>3/3</b>)</li><li><b>~9µs</b> guard overhead per call (real <code>policyCheck</code> bench)</li></ul>
+    </div>
+    <div class="card glass">
+      <h3>Real stack, end to end</h3>
+      <ul><li>Real <b>TrueForge</b> agent <code>shipwright-triage</code>, connector <code>noleak</code></li><li>GitHub's official <b>github-mcp-server</b>, unmodified</li><li>Canary deploy secret sourced live from <b>TrueFoundry Secret Management</b></li><li>Honest model take-rate with a neutral prompt: <b>3/10</b> — the guard's block rate does not vary</li></ul>
+    </div>
+  </div>
+</section>
+
+<section class="wrap" id="video">
+  <div class="h2">Demo video</div>
+  <h2 class="big">The 3-minute walkthrough.</h2>
+  <div class="videoslot glass" id="videoslot">Video embed goes here — replace this block with the demo <code>&lt;iframe&gt;</code> once uploaded.</div>
+</section>
+
+<footer class="wrap">
+  <p style="max-width:820px"><b>Honest limits.</b> Provenance covers values brokered through NoLeak; the byte-window match beats zero-width, whitespace-split and base64/hex tricks, but a novel cipher or a true paraphrase is roadmap. Taint is per proxy process today; per-session scoping is next. We don't make the model safe — we make the data unable to leave, deterministically, at the boundary.</p>
+  <p>All credentials in this project are fake canaries. Defensive-security demo for the TrueFoundry TrueForge hackathon. Code: <a href="https://github.com/ishamishra0408/truefoundrynoleakagent" target="_blank" rel="noopener">github.com/ishamishra0408/truefoundrynoleakagent</a></p>
+</footer>
+
+<script>
+const $=(s)=>document.querySelector(s);
+const logEl=$("#log");let denies=0,allows=0,busy=false;
+const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+const setV=(cls,ic,txt)=>{const v=$("#verdict");v.className="verdict "+(cls||"");v.querySelector(".ic").textContent=ic;v.querySelector(".vt").textContent=txt;};
+const node=(id,cls,badge,sub)=>{const n=$(id);if(!n)return;n.classList.remove("active","deny","ship","exposed");if(cls)n.classList.add(cls);if(badge!=null){const b=n.querySelector(".badge");if(b)b.textContent=badge;}if(sub!=null){const s=n.querySelector(".ns");if(s)s.textContent=sub;}};
+const edge=(id,cls)=>{const e=$(id);if(!e)return;e.classList.remove("on","deny","ship");if(cls)e.classList.add(cls);};
+const elabel=(id,cls)=>{const e=$(id);if(!e)return;e.classList.remove("on","deny","ship");if(cls)e.classList.add(cls);};
+function clearAll(){["#n-attacker","#n-github","#n-mcp","#n-noleak","#n-agent","#n-secret"].forEach(i=>node(i,"","idle"));["#e-att","#e-read","#e-thru","#e-a2n","#e-sec","#e-out"].forEach(i=>edge(i));["#l-a2n","#l-out"].forEach(i=>elabel(i));}
+function addLog(line,type){const l=document.createElement("div");l.className="l "+(type||"");l.textContent=line;logEl.appendChild(l);logEl.scrollTop=logEl.scrollHeight;}
+
+let REC=null;
+fetch("recording.json").then(r=>r.json()).then(j=>{REC=j;
+  const t=(j.captured_at||"").replace("T"," ").replace(/\..*/,"")+" UTC";
+  $("#recmeta").textContent="Recorded run · captured "+t+" · replayed";
+}).catch(()=>{$("#recmeta").textContent="Recorded run · replayed";});
+
+function step(ev){
+  addLog(ev.line,ev.type);
+  const t=ev.type;
+  if(t==="read"){node("#n-agent","active","reading","read_deploy_secrets");node("#n-secret","active","read");edge("#e-sec","on");node("#n-noleak","active","tainted","private zone · tainted");$("#s-noleak").textContent="guard · taint 3";}
+  else if(t==="deny"){denies++;$("#f-deny").textContent=denies;node("#n-agent","active","writing");edge("#e-a2n","deny");elabel("#l-a2n","deny");node("#n-noleak","deny","BLOCKED","DENY · taint-provenance");edge("#e-out","deny");elabel("#l-out","deny");setV("deny","🛡","INJECTION BLOCKED");}
+  else if(t==="would-deny"){node("#n-agent","active","writing");node("#n-noleak","deny","OFF · would forward","guard OFF");edge("#e-a2n","deny");edge("#e-out","deny");elabel("#l-out","deny");node("#n-mcp","exposed");node("#n-github","exposed","secret leaked");setV("exposed","✕","EXPOSED (guard off)");}
+  else if(t==="allow"){allows++;$("#f-allow").textContent=allows;node("#n-noleak","ship","clean","clean write");edge("#e-a2n","ship");edge("#e-out","ship");elabel("#l-out","ship");node("#n-mcp","ship","posted");node("#n-github","ship","triage shipped");setV("ship","✓","SHIPPED — triage completed");}
+}
+async function play(seqKey){
+  if(busy||!REC)return;busy=true;
+  document.querySelectorAll(".play").forEach(b=>b.disabled=true);
+  logEl.innerHTML="";denies=0;allows=0;$("#f-deny").textContent="0";$("#f-allow").textContent="0";clearAll();setV("","◐","Replaying…");
+  const seq=REC.sequences[seqKey];
+  addLog("▶ "+seq.label,"");
+  await sleep(600);
+  for(const ev of seq.events){ step(ev); await sleep(1100); }
+  document.querySelectorAll(".play").forEach(b=>b.disabled=false);busy=false;
+}
+document.querySelectorAll(".play").forEach(b=>b.addEventListener("click",()=>play(b.dataset.seq)));
+</script>
+</body>
+</html>

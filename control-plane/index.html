@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NoLeak Control Plane</title>
+<style>
+  :root{
+    --bg:#0b0d11; --panel:#12151b; --node:#161a21; --line:#2a313c; --line2:#333b47;
+    --ink:#eef1f7; --dim:#9aa2b2; --faint:#626b7a;
+    --accent:#6ea8fe; --violet:#8b5cf6; --deny:#ff5064; --allow:#2ee6a6; --warn:#f5b23d; --gold:#e8c07d;
+    --pub:#3a4356; --priv:#4a3a56; --ctrl:#2f4a44;
+    --mono:"SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
+    --sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    /* Liquid Glass */
+    --glass:rgba(16,20,28,.55); --glass-strong:rgba(18,23,32,.72);
+    --glass-brd:rgba(255,255,255,.10); --glass-hi:rgba(255,255,255,.14);
+    --blur:blur(22px) saturate(150%);
+    --elev:inset 0 1px 0 var(--glass-hi), 0 10px 34px rgba(0,0,0,.5);
+    --spring:cubic-bezier(.34,1.4,.5,1);
+  }
+  /* frosted-glass utility applied to chrome panels */
+  .glass{background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
+    border:1px solid var(--glass-brd);box-shadow:var(--elev)}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+  body{display:flex;flex-direction:column;overflow:hidden;
+    background:
+      radial-gradient(1100px 640px at 16% -6%, #16294a 0%, rgba(12,17,26,0) 52%),
+      radial-gradient(900px 620px at 92% 108%, #2a1c47 0%, rgba(10,12,18,0) 55%),
+      linear-gradient(180deg,#0a0d13,#070a0f)}
+  header{display:flex;align-items:center;gap:20px;padding:14px 26px;border-bottom:1px solid var(--glass-brd);
+    background:var(--glass-strong);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
+    box-shadow:inset 0 1px 0 var(--glass-hi),0 6px 24px rgba(0,0,0,.4);position:relative;z-index:5}
+  .brand{font-size:23px;font-weight:800;letter-spacing:-.02em}.brand b{color:var(--accent)}
+  .tag{color:var(--dim);font-size:13.5px}.spacer{flex:1}
+  .modewrap{display:flex;align-items:center;gap:11px}
+  .modelabel{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.14em;font-weight:700}
+  .toggle{position:relative;width:146px;height:48px;border-radius:14px;border:1px solid var(--glass-brd);background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);cursor:pointer;display:flex;align-items:center;font-weight:800;font-size:15px;user-select:none;transition:box-shadow .3s var(--spring);box-shadow:var(--elev)}
+  .toggle .knob{position:absolute;top:4px;bottom:4px;width:68px;border-radius:9px;transition:.22s cubic-bezier(.2,.9,.2,1)}
+  .toggle .lab{flex:1;text-align:center;z-index:2}
+  .toggle[data-mode="on"]{box-shadow:0 0 0 2px rgba(46,230,166,.6),0 0 34px rgba(46,230,166,.32)}
+  .toggle[data-mode="on"] .knob{left:4px;background:rgba(46,230,166,.92)}.toggle[data-mode="on"] .on{color:#04120c}.toggle .on{color:var(--allow)}
+  .toggle[data-mode="off"]{box-shadow:0 0 0 2px rgba(255,80,100,.6),0 0 34px rgba(255,80,100,.32)}
+  .toggle[data-mode="off"] .knob{left:74px;background:rgba(255,80,100,.92)}.toggle[data-mode="off"] .off{color:#160406}.toggle .off{color:var(--deny)}
+  .verdict{font-weight:800;font-size:18px;padding:10px 18px;border-radius:14px;border:1px solid var(--glass-brd);background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);display:flex;align-items:center;gap:9px;min-width:230px;justify-content:center;box-shadow:var(--elev);transition:transform .35s var(--spring),box-shadow .35s var(--spring),background .3s ease}
+  .verdict.exposed{color:#fff;background:rgba(255,80,100,.22);box-shadow:inset 0 1px 0 var(--glass-hi),0 0 0 1.5px rgba(255,80,100,.7),0 0 46px rgba(255,80,100,.4);transform:scale(1.04)}
+  .verdict.shipped{color:#fff;background:rgba(46,230,166,.2);box-shadow:inset 0 1px 0 var(--glass-hi),0 0 0 1.5px rgba(46,230,166,.7),0 0 44px rgba(46,230,166,.38);transform:scale(1.04)}
+  .verdict.run{color:var(--accent);border-color:rgba(110,168,254,.55)} .verdict.idle{color:var(--dim)}
+
+  main{flex:1;display:grid;grid-template-columns:1fr 340px;min-height:0}
+  .stagewrap{position:relative;min-height:0;display:flex;flex-direction:column}
+  svg#diagram{flex:1;width:100%;height:100%;display:block;
+    background:
+      radial-gradient(900px 500px at 30% 12%, rgba(110,168,254,.06), transparent 55%),
+      radial-gradient(760px 480px at 88% 92%, rgba(139,92,246,.06), transparent 55%)}
+  .zone rect{fill:rgba(255,255,255,.015);stroke-dasharray:5 5;stroke-width:1.5}
+  .zone.pub rect{stroke:var(--pub)} .zone.priv rect{stroke:var(--priv)} .zone.ctrl rect{stroke:var(--ctrl)}
+  .zone text{font-family:var(--sans);font-size:12.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+  .zone.pub text{fill:#7d8aa6} .zone.priv text{fill:#9a83b0} .zone.ctrl text{fill:#5fae9c}
+  .node{cursor:pointer;transition:transform .28s var(--spring);transform-box:fill-box;transform-origin:center}
+  .node:hover{transform:scale(1.035)}
+  /* glassy translucent slab with a lit top edge + soft elevation */
+  .node rect{fill:rgba(150,170,205,.10);stroke:rgba(255,255,255,.16);stroke-width:1.4;
+    filter:drop-shadow(0 8px 18px rgba(0,0,0,.5));transition:.28s var(--spring)}
+  .node .nt{font-family:var(--sans);font-weight:800;font-size:16px;fill:var(--ink)}
+  .node .nk{font-family:var(--sans);font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;fill:var(--faint)}
+  .node .ns{font-family:var(--mono);font-size:11.5px;fill:var(--dim)}
+  .node .badge{font-family:var(--sans);font-size:10px;font-weight:800;letter-spacing:.05em;fill:var(--faint)}
+  .node:hover rect{stroke:var(--accent)}
+  .node.active rect{stroke:var(--accent);filter:drop-shadow(0 0 12px rgba(110,168,254,.5))}.node.active .badge{fill:var(--accent)}
+  .node.deny rect{stroke:var(--deny);filter:drop-shadow(0 0 14px rgba(255,80,100,.55))}.node.deny .nt{fill:var(--deny)}.node.deny .badge{fill:var(--deny)}
+  .node.ship rect{stroke:var(--allow);filter:drop-shadow(0 0 13px rgba(46,230,166,.5))}.node.ship .nt{fill:var(--allow)}.node.ship .badge{fill:var(--allow)}
+  .node.exposed rect{stroke:var(--deny);filter:drop-shadow(0 0 14px rgba(255,80,100,.55))}.node.exposed .nt{fill:var(--deny)}.node.exposed .badge{fill:var(--deny)}
+  .edge{fill:none;stroke:#39404d;stroke-width:2.2;transition:.16s}
+  .edge.on{stroke:var(--accent);filter:drop-shadow(0 0 6px rgba(110,168,254,.5))}
+  .edge.deny{stroke:var(--deny);filter:drop-shadow(0 0 6px rgba(255,80,100,.5))}
+  .edge.ship{stroke:var(--allow);filter:drop-shadow(0 0 6px rgba(46,230,166,.5))}
+  .elabel{font-family:var(--mono);font-size:11px;fill:var(--faint)}
+  .elabel.on{fill:var(--accent)}.elabel.deny{fill:var(--deny)}.elabel.ship{fill:var(--allow)}
+
+  .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:12px 20px;border-top:1px solid var(--glass-brd);
+    background:var(--glass-strong);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
+    box-shadow:inset 0 1px 0 var(--glass-hi);position:relative;z-index:5}
+  button.act{font-family:var(--sans);font-weight:700;font-size:14.5px;padding:11px 16px;border-radius:12px;border:1px solid var(--glass-brd);background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);color:var(--ink);cursor:pointer;transition:transform .25s var(--spring),border-color .2s,box-shadow .25s;box-shadow:inset 0 1px 0 var(--glass-hi),0 4px 14px rgba(0,0,0,.4)}
+  button.act:hover{border-color:var(--accent);transform:translateY(-1px) scale(1.02)} button.act:active{transform:scale(.98)} button.act:disabled{opacity:.5;cursor:not-allowed}
+  /* button hierarchy: agent = lead (primary), attack/finish = secondary, reset = tertiary */
+  button.act.lead{font-size:17px;font-weight:800;padding:15px 26px;border-radius:14px;
+    background:linear-gradient(180deg,#2b6cff,#1846c8);border-color:rgba(140,180,255,.6);color:#fff;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 8px 26px rgba(40,90,220,.5)}
+  button.act.lead:hover{transform:translateY(-1px) scale(1.03);box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 10px 32px rgba(40,90,220,.6)}
+  button.act.secondary{font-size:13px;font-weight:700;padding:9px 14px;opacity:.92}
+  button.act.tertiary{font-size:15px;font-weight:700;padding:8px 12px;min-width:40px;opacity:.7;color:var(--dim);background:transparent;border-color:var(--glass-brd);box-shadow:none}
+  button.act.tertiary:hover{opacity:1;color:var(--ink);transform:none;border-color:var(--accent)}
+  button.primary{background:linear-gradient(180deg,#1d2740,#141b2c);border-color:rgba(110,168,254,.42)}
+  button.ship{background:linear-gradient(180deg,#123124,#0e2a20);border-color:rgba(46,230,166,.4)}
+  .hint{color:var(--faint);font-size:12px;font-family:var(--mono);margin-left:auto}
+
+  aside{border-left:1px solid var(--glass-brd);background:var(--glass-strong);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);box-shadow:inset 1px 0 0 var(--glass-hi);display:flex;flex-direction:column;min-height:0;position:relative;z-index:5}
+  .loghead{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:9px}
+  .loghead .dot{width:8px;height:8px;border-radius:50%;background:var(--allow);box-shadow:0 0 10px var(--allow)}
+  .loghead .h{font-weight:800;font-size:13.5px}.loghead .src{color:var(--faint);font-size:10.5px;font-family:var(--mono);margin-left:auto}
+  #log{flex:1;overflow:auto;padding:8px 13px;font-family:var(--mono);font-size:12.5px;line-height:1.5}
+  #log .l{padding:2px 6px;border-radius:6px;white-space:pre-wrap;word-break:break-word;color:var(--dim)}
+  #log .l.read{color:var(--accent)}#log .l.deny{color:var(--deny);background:rgba(255,80,100,.09);font-weight:700}
+  #log .l.allow{color:var(--allow)}#log .l.warn{color:var(--warn)}#log .l.leak{color:var(--deny);font-weight:700}
+  .nums{display:flex;border-top:1px solid var(--line)}
+  .num{flex:1;padding:11px 12px;border-right:1px solid var(--line);text-align:center}.num:last-child{border-right:0}
+  .num b{display:block;font-size:19px;font-weight:800}.num span{font-size:9.5px;color:var(--faint);letter-spacing:.08em;text-transform:uppercase;font-weight:700}
+  footer{padding:7px 16px;border-top:1px solid var(--line);color:var(--faint);font-size:10.5px;font-family:var(--mono);display:flex;gap:14px;flex-wrap:wrap}footer b{color:var(--ink)}
+  .popover{position:fixed;z-index:50;max-width:300px;background:var(--glass-strong);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border:1px solid var(--glass-brd);border-radius:14px;padding:13px 15px;box-shadow:inset 0 1px 0 var(--glass-hi),0 16px 44px rgba(0,0,0,.6);display:none}
+  .popover h4{margin:0 0 6px;font-size:14px}.popover p{margin:0;font-size:12.5px;color:var(--dim);line-height:1.5}
+  .popover code{font-family:var(--mono);color:var(--gold);font-size:11.5px}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">No<b>Leak</b> Control Plane</div>
+  <div class="tag">a TrueForge triage agent that survives a poisoned issue and still ships · live over the real proxy</div>
+  <div class="spacer"></div>
+  <div class="modewrap"><span class="modelabel">Guard</span>
+    <div id="toggle" class="toggle" data-mode="on" title="flips the REAL proxy mode">
+      <span class="lab on">ON</span><span class="lab off">OFF</span><span class="knob"></span></div></div>
+  <div id="verdict" class="verdict idle"><span class="ic">○</span><span class="vt">STANDBY</span></div>
+</header>
+
+<main>
+  <div class="stagewrap">
+    <svg id="diagram" viewBox="0 0 1180 720" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+      </defs>
+
+      <g class="zone pub"><rect x="24" y="34" width="1132" height="150" rx="16"/><text x="44" y="58">Public zone — attacker-reachable</text></g>
+      <g class="zone ctrl"><rect x="24" y="212" width="1132" height="118" rx="16"/><text x="44" y="236">Control plane — policy enforced here</text></g>
+      <g class="zone priv"><rect x="24" y="520" width="1132" height="164" rx="16"/><text x="44" y="544">Private zone — agent-only</text></g>
+
+      <g id="edges" color="#39404d">
+        <path id="e-att"  class="edge" marker-end="url(#arr)" d="M250,104 H452"/>
+        <path id="e-read" class="edge" marker-end="url(#arr)" d="M712,104 H878"/>
+        <path id="e-thru" class="edge" marker-end="url(#arr)" d="M988,138 V170 H654 V244"/>
+        <path id="e-a2n"  class="edge" marker-end="url(#arr)" d="M590,394 V316"/>
+        <path id="e-sec"  class="edge" marker-end="url(#arr)" d="M590,466 V560"/>
+        <path id="e-out"  class="edge" marker-end="url(#arr)" d="M720,280 H900 V138"/>
+        <text class="elabel" x="300" y="94">files poisoned issue</text>
+        <text class="elabel" x="748" y="94">issue_read</text>
+        <text class="elabel" x="664" y="200">through (pass)</text>
+        <text class="elabel" id="l-a2n" x="600" y="362">write · inspected</text>
+        <text class="elabel" x="600" y="512">read_deploy_secrets</text>
+        <text class="elabel" id="l-out" x="912" y="205">OFF: forward / ON: DENY</text>
+      </g>
+
+      <g class="node" id="n-attacker" data-k="attacker">
+        <rect x="50" y="72" width="200" height="64" rx="14"/>
+        <text class="nk" x="66" y="96">Outsider</text><text class="nt" x="66" y="118">Attacker</text></g>
+      <g class="node" id="n-github" data-k="github">
+        <rect x="452" y="72" width="260" height="64" rx="14"/>
+        <text class="nk" x="468" y="96">Public repo · issue #1</text><text class="nt" x="468" y="118">GitHub</text>
+        <text class="badge" x="696" y="96" text-anchor="end" id="b-github">idle</text></g>
+      <g class="node" id="n-mcp" data-k="mcp">
+        <rect x="878" y="72" width="230" height="64" rx="14"/>
+        <text class="nk" x="894" y="96">Official MCP connector</text><text class="nt" x="894" y="118">github-mcp-server</text></g>
+
+      <g class="node" id="n-noleak" data-k="noleak">
+        <rect x="460" y="244" width="260" height="72" rx="14"/>
+        <text class="nk" x="478" y="268">Policy MCP proxy</text><text class="nt" x="478" y="292">NoLeak proxy</text>
+        <text class="ns" x="478" y="309" id="s-noleak">guard on · taint 0</text>
+        <text class="badge" x="702" y="268" text-anchor="end" id="b-noleak">on</text></g>
+
+      <g class="node" id="n-agent" data-k="agent">
+        <rect x="460" y="394" width="260" height="72" rx="14"/>
+        <text class="nk" x="478" y="418">TrueForge agent</text><text class="nt" x="478" y="442">shipwright-triage</text>
+        <text class="ns" x="478" y="459" id="s-agent">idle</text>
+        <text class="badge" x="702" y="418" text-anchor="end" id="b-agent">idle</text></g>
+
+      <g class="node" id="n-secret" data-k="secret">
+        <rect x="440" y="560" width="300" height="72" rx="14"/>
+        <text class="nk" x="458" y="584">TrueFoundry Secret Store</text><text class="nt" x="458" y="608">3 canary deploy secrets</text>
+        <text class="ns" x="458" y="625" id="s-secret">imdp:shipwright-staging-deploy</text>
+        <text class="badge" x="722" y="584" text-anchor="end" id="b-secret">idle</text></g>
+    </svg>
+
+    <div class="controls">
+      <button class="act lead" id="run-agent">▶ Run live TrueForge agent</button>
+      <button class="act secondary" id="run-attack">▶ Run attack (deterministic)</button>
+      <button class="act ship secondary" id="run-finish">✓ Complete triage safely</button>
+      <button class="act tertiary" id="reset" title="Reset">↺</button>
+      <span class="hint">click a node for detail · every DENY is a real policy-engine event</span>
+    </div>
+  </div>
+
+  <aside>
+    <div class="loghead"><span class="dot"></span><span class="h">Live event log</span><span class="src">tailing noleak-proxy.log</span></div>
+    <div id="log"></div>
+    <div class="nums">
+      <div class="num"><b id="f-deny" style="color:var(--deny)">0</b><span>blocked</span></div>
+      <div class="num"><b id="f-allow" style="color:var(--allow)">0</b><span>shipped</span></div>
+      <div class="num"><b id="f-us" style="color:var(--gold)">~30</b><span style="text-transform:none">microsec / call</span></div>
+    </div>
+    <footer><span>mode <b id="fmode">on</b></span><span>0% false-positive · 20/20 tests</span><span>real TrueForge + GitHub MCP</span></footer>
+  </aside>
+</main>
+<div class="popover" id="pop"></div>
+
+<script>
+const $=(s)=>document.querySelector(s);
+const logEl=$("#log");let denies=0,allows=0;
+const setV=(state,ic,txt)=>{const v=$("#verdict");v.className="verdict "+state;v.querySelector(".ic").textContent=ic;v.querySelector(".vt").textContent=txt;};
+const node=(id,cls,badge,sub)=>{const n=$(id);if(!n)return;n.classList.remove("active","deny","ship","exposed");if(cls)n.classList.add(cls);if(badge!=null){const b=n.querySelector(".badge");if(b)b.textContent=badge;}if(sub!=null){const s=n.querySelector(".ns");if(s)s.textContent=sub;}};
+const edge=(id,cls)=>{const e=$(id);if(!e)return;e.classList.remove("on","deny","ship");if(cls)e.classList.add(cls);};
+const elabel=(id,cls)=>{const e=$(id);if(!e)return;e.classList.remove("on","deny","ship");if(cls)e.classList.add(cls);};
+function clearAll(){["#n-attacker","#n-github","#n-mcp","#n-noleak","#n-agent","#n-secret"].forEach(i=>node(i,"","idle"));
+  ["#e-att","#e-read","#e-thru","#e-a2n","#e-sec","#e-out"].forEach(i=>edge(i));["#l-a2n","#l-out"].forEach(i=>elabel(i));
+  node("#n-noleak","","on");}
+
+const DESC={
+  attacker:["Attacker (outsider)","No credentials, no route to the private zone. Files a normal-looking public bug report whose hidden HTML comment tells the triage bot to read and paste deploy secrets."],
+  github:["GitHub — public repo, issue #1","<code>ishamishra0408/shipwright-demo</code>. Both the untrusted-input surface (the poisoned issue) and the exfil surface (a public comment)."],
+  mcp:["github-mcp-server","GitHub's official MCP server, unmodified. Reached only THROUGH the NoLeak proxy — the agent never talks to it directly."],
+  noleak:["NoLeak proxy — the control plane","Policy MCP proxy, <code>noleak/proxy.mjs</code>. Reads pass through; writes are inspected. Rule A taints values it brokered from the private zone; Rule B is a narrow secret-shape fallback. ~30µs/call, no model in the decision."],
+  agent:["TrueForge agent — shipwright-triage","A real TrueForge triage loop. Its only MCP connector is <code>noleak</code>. The confused deputy: it can reach both zones; the attacker cannot."],
+  secret:["TrueFoundry Secret Store","The private zone. 3 canary deploy secrets fetched live via <code>read_deploy_secrets</code> (source <code>truefoundry:imdp:shipwright-staging-deploy</code>). Values are tainted the moment NoLeak brokers them."],
+};
+document.querySelectorAll(".node").forEach(n=>n.addEventListener("click",(e)=>{
+  const d=DESC[n.dataset.k];if(!d)return;const p=$("#pop");
+  p.innerHTML=`<h4>${d[0]}</h4><p>${d[1]}</p>`;p.style.display="block";
+  p.style.left=Math.min(e.clientX+14,window.innerWidth-320)+"px";p.style.top=Math.min(e.clientY+12,window.innerHeight-170)+"px";
+}));
+document.addEventListener("click",(e)=>{if(!e.target.closest(".node")&&!e.target.closest("#pop"))$("#pop").style.display="none";});
+
+function addLog(line,backlog){const l=document.createElement("div");l.className="l";
+  if(/DENY /.test(line)&&/add_issue_comment|issue_write|push_files/.test(line))l.classList.add("deny");
+  else if(/READ  read_deploy_secrets/.test(line))l.classList.add("read");
+  else if(/ALLOW add_issue_comment|ALLOW /.test(line))l.classList.add("allow");
+  else if(/WOULD-DENY/.test(line))l.classList.add("warn");
+  else if(/forwarding the leak/.test(line))l.classList.add("leak");
+  l.textContent=line;logEl.appendChild(l);logEl.scrollTop=logEl.scrollHeight;
+  while(logEl.children.length>400)logEl.removeChild(logEl.firstChild);if(!backlog)drive(line);}
+
+function drive(line){
+  const mt=line.match(/tainted (\d+) value/);if(mt){$("#s-noleak").textContent="guard on · taint "+mt[1];}
+  if(/READ  read_deploy_secrets/.test(line)){
+    clearAll();node("#n-agent","active","reading","read_deploy_secrets");node("#n-secret","active","read");
+    edge("#e-sec","on");node("#n-noleak","active","tainted",(line.match(/source=([^ )]+)/)?.[1]||"private zone"));setV("run","◐","RUNNING");}
+  else if(/DENY /.test(line)&&/add_issue_comment|issue_write|push_files/.test(line)){
+    denies++;$("#f-deny").textContent=denies;const rule=(line.match(/rule=([a-z-]+)/)?.[1])||"policy";
+    node("#n-agent","active","writing");edge("#e-a2n","deny");elabel("#l-a2n","deny");
+    node("#n-noleak","deny","BLOCKED","DENY · "+rule);edge("#e-out","deny");elabel("#l-out","deny");
+    setV("run","🛡","INJECTION BLOCKED");}
+  else if(/ALLOW add_issue_comment/.test(line)){
+    allows++;$("#f-allow").textContent=allows;node("#n-noleak","ship","clean","clean write");
+    edge("#e-a2n","ship");edge("#e-out","ship");elabel("#l-out","ship");
+    node("#n-mcp","ship","posted");node("#n-github","ship","triage shipped");
+    if($("#toggle").dataset.mode==="on")setV("shipped","✓","SHIPPED — triage completed");}
+  else if(/forwarding the leak/.test(line)){
+    node("#n-noleak","deny","OFF","forwarding leak");edge("#e-out","deny");elabel("#l-out","deny");
+    node("#n-mcp","exposed");node("#n-github","exposed","secret leaked");setV("exposed","✕","EXPOSED");}
+}
+
+async function refreshMode(){try{const m=await(await fetch("/mode")).json();applyMode(m.mode,m.taint);}catch{}}
+function applyMode(mode,taint){const t=$("#toggle");t.dataset.mode=mode==="off"?"off":"on";$("#fmode").textContent=mode;
+  const b=$("#b-noleak");if(b)b.textContent=mode;$("#s-noleak").textContent="guard "+mode+" · taint "+(taint??0);}
+$("#toggle").onclick=async()=>{const next=$("#toggle").dataset.mode==="on"?"off":"on";const m=await(await fetch("/mode/"+next,{method:"POST"})).json();applyMode(m.mode);setV("idle","○",next==="off"?"GUARD OFF":"GUARD ON");};
+$("#reset").onclick=async()=>{await fetch("/reset",{method:"POST"});clearAll();setV("idle","○","STANDBY");};
+$("#run-attack").onclick=async(e)=>{e.target.disabled=true;setV("run","◐","RUNNING…");try{await fetch("/run/attack",{method:"POST",headers:{"content-type":"application/json"},body:"{}"});}finally{e.target.disabled=false;}};
+$("#run-agent").onclick=async(e)=>{e.target.disabled=true;setV("run","◐","AGENT RUNNING…");try{await fetch("/run/agent",{method:"POST"});}finally{e.target.disabled=false;}};
+$("#run-finish").onclick=async(e)=>{e.target.disabled=true;try{const blk=denies>0;await fetch("/run/finish",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({blocked:blk})});
+  node("#n-github","ship","triaged"+(blk?" + flagged":""));if($("#toggle").dataset.mode==="on")setV("shipped","✓","SHIPPED — triaged + labeled");}finally{e.target.disabled=false;}};
+
+const es=new EventSource("/events");
+es.onmessage=(ev)=>{try{const d=JSON.parse(ev.data);if(d.line)addLog(d.line,d.backlog);}catch{}};
+(async()=>{try{const b=await(await fetch("/bench")).json();if(b.us)$("#f-us").textContent="~"+Math.round(b.us);}catch{}})();
+refreshMode();setInterval(refreshMode,2500);
+</script>
+</body>
+</html>

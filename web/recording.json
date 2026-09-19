@@ -1,6 +1,6 @@
 {
   "captured_at": "2026-09-19T22:27:41.114937Z",
-  "source": "real noleak/proxy.mjs policy engine (localhost:8791), captured live; replayed statically. No secrets, no live calls.",
+  "source": "Captured live from the real NoLeak policy engine (noleak/proxy.mjs) over the actual TrueForge -> NoLeak -> github-mcp-server path, then replayed statically. No secrets, no live calls.",
   "sequences": {
     "attack_blocked": {
       "label": "Guard ON \u2014 deterministic attack blocked",

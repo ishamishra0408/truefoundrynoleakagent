@@ -3,273 +3,302 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>NoLeak Containment — a triage agent that survives a poisoned issue and still ships</title>
-<meta name="description" content="Deterministic policy proxy in front of GitHub's MCP. A poisoned issue tries to exfiltrate a deploy secret; NoLeak blocks the write at the boundary and the agent still ships clean triage. Guard OFF = exposed, Guard ON = shipped." />
+<title>NoLeak Control Plane — recorded run</title>
 <style>
   :root{
-    --bg:#0b0d11; --ink:#eef1f7; --dim:#9aa2b2; --faint:#626b7a;
-    --accent:#6ea8fe; --violet:#8b5cf6; --deny:#ff5064; --allow:#2ee6a6; --gold:#e8c07d;
+    --bg:#0b0d11; --panel:#12151b; --node:#161a21; --line:#2a313c; --line2:#333b47;
+    --ink:#eef1f7; --dim:#9aa2b2; --faint:#626b7a;
+    --accent:#6ea8fe; --violet:#8b5cf6; --deny:#ff5064; --allow:#2ee6a6; --warn:#f5b23d; --gold:#e8c07d;
+    --pub:#3a4356; --priv:#4a3a56; --ctrl:#2f4a44;
+    --mono:"SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
+    --sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    /* Liquid Glass */
     --glass:rgba(16,20,28,.55); --glass-strong:rgba(18,23,32,.72);
     --glass-brd:rgba(255,255,255,.10); --glass-hi:rgba(255,255,255,.14);
     --blur:blur(22px) saturate(150%);
     --elev:inset 0 1px 0 var(--glass-hi), 0 10px 34px rgba(0,0,0,.5);
-    --spring:cubic-bezier(.34,1.4,.5,1); --ease:cubic-bezier(.22,.7,.2,1);
-    --mono:"SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
-    --sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    --spring:cubic-bezier(.34,1.4,.5,1);
   }
+  /* frosted-glass utility applied to chrome panels */
+  .glass{background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
+    border:1px solid var(--glass-brd);box-shadow:var(--elev)}
   *{box-sizing:border-box}
-  html{scroll-behavior:smooth;scroll-padding-top:76px}
-  html,body{margin:0;color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;
-    background:radial-gradient(1100px 640px at 16% -6%,#16294a 0%,rgba(12,17,26,0) 52%),
-      radial-gradient(900px 700px at 92% 8%,#2a1c47 0%,rgba(10,12,18,0) 55%),linear-gradient(180deg,#0a0d13,#070a0f) fixed}
-  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
-  .wrap{max-width:1120px;margin:0 auto;padding:0 22px}
-  .glass{background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border:1px solid var(--glass-brd);box-shadow:var(--elev)}
-  header.nav{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:16px;padding:14px 22px;background:var(--glass-strong);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border-bottom:1px solid var(--glass-brd)}
-  .brand{font-weight:800;font-size:19px;letter-spacing:-.02em}.brand b{color:var(--accent)}
-  .nav .sp{flex:1}.nav a{color:var(--dim);font-size:14px;font-weight:600;transition:color .2s var(--ease)}.nav a:hover{color:var(--ink);text-decoration:none}
-  .pill{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:999px;font-size:12.5px;font-weight:700;border:1px solid var(--glass-brd);background:var(--glass)}
+  html,body{margin:0;height:100%;color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+  body{display:flex;flex-direction:column;overflow:hidden;
+    background:
+      radial-gradient(1100px 640px at 16% -6%, #16294a 0%, rgba(12,17,26,0) 52%),
+      radial-gradient(900px 620px at 92% 108%, #2a1c47 0%, rgba(10,12,18,0) 55%),
+      linear-gradient(180deg,#0a0d13,#070a0f)}
+  header{display:flex;align-items:center;gap:20px;padding:14px 26px;border-bottom:1px solid var(--glass-brd);
+    background:var(--glass-strong);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
+    box-shadow:inset 0 1px 0 var(--glass-hi),0 6px 24px rgba(0,0,0,.4);position:relative;z-index:5}
+  .brand{font-size:23px;font-weight:800;letter-spacing:-.02em}.brand b{color:var(--accent)}
+  .tag{color:var(--dim);font-size:13.5px;display:flex;align-items:center;gap:8px}.spacer{flex:1}
+  .recdot{width:9px;height:9px;border-radius:50%;background:var(--deny);box-shadow:0 0 10px var(--deny);animation:pulse 2s ease-in-out infinite;flex:0 0 auto}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .modewrap{display:flex;align-items:center;gap:11px}
+  .modelabel{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.14em;font-weight:700}
+  .toggle{position:relative;width:146px;height:48px;border-radius:14px;border:1px solid var(--glass-brd);background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);cursor:pointer;display:flex;align-items:center;font-weight:800;font-size:15px;user-select:none;transition:box-shadow .3s var(--spring);box-shadow:var(--elev)}
+  .toggle .knob{position:absolute;top:4px;bottom:4px;width:68px;border-radius:9px;transition:.22s cubic-bezier(.2,.9,.2,1)}
+  .toggle .lab{flex:1;text-align:center;z-index:2}
+  .toggle[data-mode="on"]{box-shadow:0 0 0 2px rgba(46,230,166,.6),0 0 34px rgba(46,230,166,.32)}
+  .toggle[data-mode="on"] .knob{left:4px;background:rgba(46,230,166,.92)}.toggle[data-mode="on"] .on{color:#04120c}.toggle .on{color:var(--allow)}
+  .toggle[data-mode="off"]{box-shadow:0 0 0 2px rgba(255,80,100,.6),0 0 34px rgba(255,80,100,.32)}
+  .toggle[data-mode="off"] .knob{left:74px;background:rgba(255,80,100,.92)}.toggle[data-mode="off"] .off{color:#160406}.toggle .off{color:var(--deny)}
+  .verdict{font-weight:800;font-size:18px;padding:10px 18px;border-radius:14px;border:1px solid var(--glass-brd);background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);display:flex;align-items:center;gap:9px;min-width:230px;justify-content:center;box-shadow:var(--elev);transition:transform .35s var(--spring),box-shadow .35s var(--spring),background .3s ease}
+  .verdict.exposed{color:#fff;background:rgba(255,80,100,.22);box-shadow:inset 0 1px 0 var(--glass-hi),0 0 0 1.5px rgba(255,80,100,.7),0 0 46px rgba(255,80,100,.4);transform:scale(1.04)}
+  .verdict.shipped{color:#fff;background:rgba(46,230,166,.2);box-shadow:inset 0 1px 0 var(--glass-hi),0 0 0 1.5px rgba(46,230,166,.7),0 0 44px rgba(46,230,166,.38);transform:scale(1.04)}
+  .verdict.run{color:var(--accent);border-color:rgba(110,168,254,.55)} .verdict.idle{color:var(--dim)}
 
-  section{padding:60px 0}
-  .lbl{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--faint);font-weight:800;margin-bottom:14px}
-  h1{font-size:50px;line-height:1.03;letter-spacing:-.03em;margin:.24em 0 .28em;font-weight:850}
-  h1 .g{background:linear-gradient(90deg,#8ec1ff,#b79bff);-webkit-background-clip:text;background-clip:text;color:transparent}
-  .sub{font-size:19px;color:var(--dim);max-width:640px;line-height:1.5}
-  .cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:26px}
-  .btn{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:15px;padding:13px 20px;border-radius:13px;border:1px solid var(--glass-brd);background:var(--glass);cursor:pointer;color:var(--ink);transition:transform .25s var(--spring),border-color .2s var(--ease),box-shadow .25s var(--ease)}
-  .btn:hover{border-color:var(--accent);transform:translateY(-2px)} .btn:active{transform:translateY(0) scale(.97)}
-  .btn.primary{background:linear-gradient(180deg,#2b6cff,#1846c8);border-color:rgba(140,180,255,.6);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 8px 26px rgba(40,90,220,.45)}
-
-  .numstrip{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:36px}
-  .stat{padding:20px 16px;border-radius:16px;text-align:center;transition:transform .3s var(--spring),border-color .2s}
-  .stat:hover{transform:translateY(-3px);border-color:var(--accent)}
-  .stat b{display:block;font-size:32px;font-weight:850;letter-spacing:-.02em;color:var(--allow)} .stat span{font-size:12.5px;color:var(--faint);font-weight:700}
-
-  /* compact CVE badges */
-  .cverow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:6px}
-  .cvebadge{display:flex;flex-direction:column;gap:4px;padding:16px 18px;border-radius:14px;transition:transform .28s var(--spring),border-color .2s}
-  .cvebadge:hover{transform:translateY(-3px);border-color:var(--accent);text-decoration:none}
-  .cvebadge:active{transform:scale(.98)}
-  .cvebadge b{font-size:15px;color:var(--ink)} .cvebadge span{font-size:12.5px;color:var(--dim)}
-  .cvebadge.red{border-left:3px solid var(--deny)} .cvebadge.amber{border-left:3px solid var(--gold)} .cvebadge.blue{border-left:3px solid var(--accent)}
-  .cap{color:var(--dim);font-size:14.5px;line-height:1.5;max-width:720px;margin:0 0 4px}
-  .cap code{font-size:13px}
-
-  /* arena */
-  .arena{border-radius:20px;overflow:hidden;margin-top:16px}
-  .arenabar{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--glass-brd);background:var(--glass-strong)}
-  .rec{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--dim);font-family:var(--mono)}
-  .rec .dot{width:9px;height:9px;border-radius:50%;background:var(--deny);box-shadow:0 0 10px var(--deny);animation:pulse 2s var(--ease) infinite}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-  .arenabar .sp{flex:1}
-  .play{font-weight:700;font-size:13.5px;padding:9px 14px;border-radius:11px;border:1px solid var(--glass-brd);background:var(--glass);color:var(--ink);cursor:pointer;transition:transform .22s var(--spring),border-color .2s var(--ease)}
-  .play:hover{border-color:var(--accent);transform:translateY(-2px)} .play:active{transform:scale(.96)} .play.lead{background:linear-gradient(180deg,#2b6cff,#1846c8);border-color:rgba(140,180,255,.6);color:#fff}
-  .play:disabled{opacity:.5;cursor:not-allowed;transform:none}
-  .verdict{margin-left:auto;font-weight:800;font-size:15px;padding:8px 14px;border-radius:11px;border:1px solid var(--glass-brd);background:var(--glass);display:flex;align-items:center;gap:8px;transition:transform .4s var(--spring),background .35s var(--ease),box-shadow .35s var(--ease)}
-  .verdict.deny{color:#fff;background:rgba(255,80,100,.22);box-shadow:0 0 0 1.5px rgba(255,80,100,.7),0 0 40px rgba(255,80,100,.35);transform:scale(1.04)}
-  .verdict.ship{color:#fff;background:rgba(46,230,166,.2);box-shadow:0 0 0 1.5px rgba(46,230,166,.7);transform:scale(1.04)}
-  .verdict.exposed{color:#fff;background:rgba(255,80,100,.22);box-shadow:0 0 0 1.5px rgba(255,80,100,.7)}
-  .arenamain{display:grid;grid-template-columns:1fr 320px;min-height:520px}
-  svg#diagram{width:100%;height:100%;display:block;background:radial-gradient(760px 420px at 30% 12%,rgba(110,168,254,.06),transparent 55%),radial-gradient(680px 420px at 88% 92%,rgba(139,92,246,.06),transparent 55%)}
+  main{flex:1;display:grid;grid-template-columns:1fr 340px;min-height:0}
+  .stagewrap{position:relative;min-height:0;display:flex;flex-direction:column}
+  svg#diagram{flex:1;width:100%;height:100%;display:block;
+    background:
+      radial-gradient(900px 500px at 30% 12%, rgba(110,168,254,.06), transparent 55%),
+      radial-gradient(760px 480px at 88% 92%, rgba(139,92,246,.06), transparent 55%)}
   .zone rect{fill:rgba(255,255,255,.015);stroke-dasharray:5 5;stroke-width:1.5}
-  .zone.pub rect{stroke:#3a4356}.zone.ctrl rect{stroke:#2f4a44}.zone.priv rect{stroke:#4a3a56}
-  .zone text{font-family:var(--sans);font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
-  .zone.pub text{fill:#7d8aa6}.zone.ctrl text{fill:#5fae9c}.zone.priv text{fill:#9a83b0}
-  .node rect{fill:rgba(150,170,205,.10);stroke:rgba(255,255,255,.16);stroke-width:1.4;filter:drop-shadow(0 8px 18px rgba(0,0,0,.5));transition:stroke .3s var(--ease),filter .3s var(--ease)}
-  .node .nt{font-family:var(--sans);font-weight:800;font-size:15px;fill:var(--ink)}
-  .node .nk{font-family:var(--sans);font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;fill:var(--faint)}
-  .node .ns{font-family:var(--mono);font-size:11px;fill:var(--dim)}
-  .node .badge{font-family:var(--sans);font-size:9.5px;font-weight:800;fill:var(--faint)}
+  .zone.pub rect{stroke:var(--pub)} .zone.priv rect{stroke:var(--priv)} .zone.ctrl rect{stroke:var(--ctrl)}
+  .zone text{font-family:var(--sans);font-size:12.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+  .zone.pub text{fill:#7d8aa6} .zone.priv text{fill:#9a83b0} .zone.ctrl text{fill:#5fae9c}
+  .node{cursor:pointer;transition:transform .28s var(--spring);transform-box:fill-box;transform-origin:center}
+  .node:hover{transform:scale(1.035)}
+  /* glassy translucent slab with a lit top edge + soft elevation */
+  .node rect{fill:rgba(150,170,205,.10);stroke:rgba(255,255,255,.16);stroke-width:1.4;
+    filter:drop-shadow(0 8px 18px rgba(0,0,0,.5));transition:.28s var(--spring)}
+  .node .nt{font-family:var(--sans);font-weight:800;font-size:16px;fill:var(--ink)}
+  .node .nk{font-family:var(--sans);font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;fill:var(--faint)}
+  .node .ns{font-family:var(--mono);font-size:11.5px;fill:var(--dim)}
+  .node .badge{font-family:var(--sans);font-size:10px;font-weight:800;letter-spacing:.05em;fill:var(--faint)}
+  .node:hover rect{stroke:var(--accent)}
   .node.active rect{stroke:var(--accent);filter:drop-shadow(0 0 12px rgba(110,168,254,.5))}.node.active .badge{fill:var(--accent)}
   .node.deny rect{stroke:var(--deny);filter:drop-shadow(0 0 14px rgba(255,80,100,.55))}.node.deny .nt{fill:var(--deny)}.node.deny .badge{fill:var(--deny)}
   .node.ship rect{stroke:var(--allow);filter:drop-shadow(0 0 13px rgba(46,230,166,.5))}.node.ship .nt{fill:var(--allow)}.node.ship .badge{fill:var(--allow)}
   .node.exposed rect{stroke:var(--deny);filter:drop-shadow(0 0 14px rgba(255,80,100,.55))}.node.exposed .nt{fill:var(--deny)}.node.exposed .badge{fill:var(--deny)}
-  .edge{fill:none;stroke:#39404d;stroke-width:2.2;transition:stroke .35s var(--ease),filter .35s var(--ease)}
-  .edge.on{stroke:var(--accent)}.edge.deny{stroke:var(--deny)}.edge.ship{stroke:var(--allow)}
-  .elabel{font-family:var(--mono);font-size:10.5px;fill:var(--faint);transition:fill .35s var(--ease)}.elabel.deny{fill:var(--deny)}.elabel.ship{fill:var(--allow)}
-  aside.logpane{border-left:1px solid var(--glass-brd);background:var(--glass-strong);display:flex;flex-direction:column}
-  .loghd{padding:11px 15px;border-bottom:1px solid var(--glass-brd);font-weight:800;font-size:13px;display:flex;gap:8px;align-items:center}
-  .loghd .d{width:8px;height:8px;border-radius:50%;background:var(--allow);box-shadow:0 0 10px var(--allow)}
-  #log{flex:1;overflow:auto;padding:8px 13px;font-family:var(--mono);font-size:12px;line-height:1.5;min-height:180px}
-  #log .l{padding:2px 5px;border-radius:5px;white-space:pre-wrap;word-break:break-word;color:var(--dim);animation:logIn .3s var(--ease)}
+  .edge{fill:none;stroke:#39404d;stroke-width:2.2;transition:.16s}
+  .edge.on{stroke:var(--accent);filter:drop-shadow(0 0 6px rgba(110,168,254,.5))}
+  .edge.deny{stroke:var(--deny);filter:drop-shadow(0 0 6px rgba(255,80,100,.5))}
+  .edge.ship{stroke:var(--allow);filter:drop-shadow(0 0 6px rgba(46,230,166,.5))}
+  .elabel{font-family:var(--mono);font-size:11px;fill:var(--faint)}
+  .elabel.on{fill:var(--accent)}.elabel.deny{fill:var(--deny)}.elabel.ship{fill:var(--allow)}
+
+  .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:12px 20px;border-top:1px solid var(--glass-brd);
+    background:var(--glass-strong);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
+    box-shadow:inset 0 1px 0 var(--glass-hi);position:relative;z-index:5}
+  button.act{font-family:var(--sans);font-weight:700;font-size:14.5px;padding:11px 16px;border-radius:12px;border:1px solid var(--glass-brd);background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);color:var(--ink);cursor:pointer;transition:transform .25s var(--spring),border-color .2s,box-shadow .25s;box-shadow:inset 0 1px 0 var(--glass-hi),0 4px 14px rgba(0,0,0,.4)}
+  button.act:hover{border-color:var(--accent);transform:translateY(-1px) scale(1.02)} button.act:active{transform:scale(.98)} button.act:disabled{opacity:.5;cursor:not-allowed}
+  /* button hierarchy: agent = lead (primary), attack/finish = secondary, reset = tertiary */
+  button.act.lead{font-size:17px;font-weight:800;padding:15px 26px;border-radius:14px;
+    background:linear-gradient(180deg,#2b6cff,#1846c8);border-color:rgba(140,180,255,.6);color:#fff;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 8px 26px rgba(40,90,220,.5)}
+  button.act.lead:hover{transform:translateY(-1px) scale(1.03);box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 10px 32px rgba(40,90,220,.6)}
+  button.act.secondary{font-size:13px;font-weight:700;padding:9px 14px;opacity:.92}
+  button.act.tertiary{font-size:15px;font-weight:700;padding:8px 12px;min-width:40px;opacity:.7;color:var(--dim);background:transparent;border-color:var(--glass-brd);box-shadow:none}
+  button.act.tertiary:hover{opacity:1;color:var(--ink);transform:none;border-color:var(--accent)}
+  /* "live only on localhost": looks disabled for live use, still plays a recorded session */
+  button.act.locked{position:relative;filter:grayscale(.5);opacity:.72}
+  button.act.locked:hover{transform:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 8px 26px rgba(40,90,220,.35)}
+  button.act.locked .tip{position:absolute;left:50%;bottom:calc(100% + 12px);transform:translateX(-50%) translateY(6px);opacity:0;pointer-events:none;white-space:nowrap;
+    background:var(--glass-strong);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border:1px solid var(--glass-brd);border-radius:11px;padding:9px 13px;font-size:12px;font-weight:600;color:var(--ink);font-family:var(--sans);
+    box-shadow:inset 0 1px 0 var(--glass-hi),0 14px 34px rgba(0,0,0,.55);transition:opacity .22s var(--spring),transform .22s var(--spring);z-index:30}
+  button.act.locked:hover .tip{opacity:1;transform:translateX(-50%) translateY(0)}
+  .hint{color:var(--faint);font-size:12px;font-family:var(--mono);margin-left:auto}
+
+  aside{border-left:1px solid var(--glass-brd);background:var(--glass-strong);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);box-shadow:inset 1px 0 0 var(--glass-hi);display:flex;flex-direction:column;min-height:0;position:relative;z-index:5}
+  .loghead{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:9px}
+  .loghead .dot{width:8px;height:8px;border-radius:50%;background:var(--allow);box-shadow:0 0 10px var(--allow)}
+  .loghead .h{font-weight:800;font-size:13.5px}.loghead .src{color:var(--faint);font-size:10.5px;font-family:var(--mono);margin-left:auto}
+  #log{flex:1;overflow:auto;padding:8px 13px;font-family:var(--mono);font-size:12.5px;line-height:1.5}
+  #log .l{padding:2px 6px;border-radius:6px;white-space:pre-wrap;word-break:break-word;color:var(--dim);animation:logIn .28s ease}
   @keyframes logIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
   #log .l.read{color:var(--accent)}#log .l.deny{color:var(--deny);background:rgba(255,80,100,.09);font-weight:700}
-  #log .l.allow{color:var(--allow)}#log .l.would-deny{color:var(--deny);font-weight:700}
-  .lognums{display:flex;border-top:1px solid var(--glass-brd)}.lognums .n{flex:1;padding:10px;text-align:center;border-right:1px solid var(--glass-brd)}.lognums .n:last-child{border:0}
-  .lognums b{display:block;font-size:18px;font-weight:800}.lognums span{font-size:9px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;font-weight:700}
-  .lognums span.unit{text-transform:none;letter-spacing:0}
-
-  .arch2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
-  .rule{padding:16px 18px;border-radius:14px} .rule b{font-size:14px} .rule p{margin:6px 0 0;color:var(--dim);font-size:13.5px;line-height:1.5}
-  .videoslot{margin-top:14px;border-radius:16px;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;color:var(--faint);font-family:var(--mono);font-size:13.5px;text-align:center;padding:20px}
-  code{font-family:var(--mono);color:var(--gold);font-size:13px}
-  footer{padding:34px 0 60px;color:var(--faint);font-size:12.5px;border-top:1px solid var(--glass-brd);margin-top:20px;line-height:1.6}
-
-  /* scroll reveal */
-  .reveal{opacity:0;transform:translateY(18px);transition:opacity .7s var(--ease),transform .7s var(--ease)}
-  .reveal.in{opacity:1;transform:none}
+  #log .l.allow{color:var(--allow)}#log .l.warn{color:var(--warn)}#log .l.leak{color:var(--deny);font-weight:700}
+  .nums{display:flex;border-top:1px solid var(--line)}
+  .num{flex:1;padding:11px 12px;border-right:1px solid var(--line);text-align:center}.num:last-child{border-right:0}
+  .num b{display:block;font-size:19px;font-weight:800}.num span{font-size:9.5px;color:var(--faint);letter-spacing:.08em;text-transform:uppercase;font-weight:700}
+  footer{padding:7px 16px;border-top:1px solid var(--line);color:var(--faint);font-size:10.5px;font-family:var(--mono);display:flex;gap:14px;flex-wrap:wrap}footer b{color:var(--ink)}
+  .popover{position:fixed;z-index:50;max-width:300px;background:var(--glass-strong);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border:1px solid var(--glass-brd);border-radius:14px;padding:13px 15px;box-shadow:inset 0 1px 0 var(--glass-hi),0 16px 44px rgba(0,0,0,.6);display:none}
+  .popover h4{margin:0 0 6px;font-size:14px}.popover p{margin:0;font-size:12.5px;color:var(--dim);line-height:1.5}
+  .popover code{font-family:var(--mono);color:var(--gold);font-size:11.5px}
   @media(prefers-reduced-motion:reduce){
-    html{scroll-behavior:auto}
     *,*::before,*::after{transition-duration:.001ms!important;animation-duration:.001ms!important;animation-iteration-count:1!important}
-    .reveal{opacity:1;transform:none}
   }
-  @media(max-width:820px){.numstrip,.cverow,.arch2{grid-template-columns:1fr}.arenamain{grid-template-columns:1fr}h1{font-size:34px}}
 </style>
 </head>
 <body>
-<header class="nav">
-  <div class="brand">No<b>Leak</b> Containment</div>
-  <div class="sp"></div>
-  <a href="#incidents">Incidents</a><a href="#arena">Replay</a><a href="#architecture">Architecture</a>
-  <a href="https://github.com/ishamishra0408/truefoundrynoleakagent" target="_blank" rel="noopener">GitHub ↗</a>
+<header>
+  <div class="brand">No<b>Leak</b> Control Plane</div>
+  <div class="tag"><span class="recdot"></span><span id="recbanner">Recorded run · replayed</span> — every DENY is a real policy-engine event</div>
+  <div class="spacer"></div>
+  <div class="modewrap"><span class="modelabel">Guard</span>
+    <div id="toggle" class="toggle" data-mode="on" title="replays the recorded OFF / ON states">
+      <span class="lab on">ON</span><span class="lab off">OFF</span><span class="knob"></span></div></div>
+  <div id="verdict" class="verdict idle"><span class="ic">○</span><span class="vt">STANDBY</span></div>
 </header>
 
-<section class="wrap reveal" style="padding-top:52px">
-  <span class="pill">🛡 TrueFoundry TrueForge · defensive security</span>
-  <h1>A triage agent that survives a <span class="g">poisoned issue</span><br>— and still ships.</h1>
-  <p class="sub">A deterministic policy proxy in front of GitHub's MCP. Guard OFF = <b style="color:var(--deny)">exposed</b>. Guard ON = <b style="color:var(--allow)">shipped</b>.</p>
-  <div class="cta">
-    <a class="btn primary" href="#arena">▶ Watch the recorded run</a>
-    <a class="btn" href="https://github.com/ishamishra0408/truefoundrynoleakagent" target="_blank" rel="noopener">View the code</a>
-  </div>
-  <div class="numstrip">
-    <div class="stat glass"><b>20/20</b><span>policy tests</span></div>
-    <div class="stat glass"><b>0%</b><span>false positives</span></div>
-    <div class="stat glass"><b>3/3</b><span>verbatim · split · base64</span></div>
-    <div class="stat glass"><b>~9µs</b><span>guard overhead</span></div>
-  </div>
-</section>
+<main>
+  <div class="stagewrap">
+    <svg id="diagram" viewBox="0 0 1180 720" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+      </defs>
 
-<section class="wrap reveal" id="incidents">
-  <div class="lbl">This already happened</div>
-  <div class="cverow">
-    <a class="cvebadge glass blue" href="https://invariantlabs.ai/blog/mcp-github-vulnerability" target="_blank" rel="noopener">
-      <b>Invariant Labs ↗</b><span>May 2025 · GitHub-MCP toxic agent flow</span></a>
-    <a class="cvebadge glass red" href="https://nvd.nist.gov/vuln/detail/CVE-2025-32711" target="_blank" rel="noopener">
-      <b>CVE-2025-32711 ↗</b><span>CVSS 9.3 · Copilot EchoLeak</span></a>
-    <a class="cvebadge glass amber" href="https://noma.security/blog/gitlost-how-we-tricked-githubs-ai-agent-into-leaking-private-repos/" target="_blank" rel="noopener">
-      <b>Noma GitLost ↗</b><span>2026 · GitHub agent leaked repos</span></a>
-  </div>
-</section>
+      <g class="zone pub"><rect x="24" y="34" width="1132" height="150" rx="16"/><text x="44" y="58">Public zone — attacker-reachable</text></g>
+      <g class="zone ctrl"><rect x="24" y="212" width="1132" height="118" rx="16"/><text x="44" y="236">Control plane — policy enforced here</text></g>
+      <g class="zone priv"><rect x="24" y="520" width="1132" height="164" rx="16"/><text x="44" y="544">Private zone — agent-only</text></g>
 
-<section class="wrap reveal" id="arena">
-  <div class="lbl">Recorded run</div>
-  <p class="cap">Every DENY is a real <code>noleak/proxy.mjs</code> policy-engine event, captured live and replayed. No live calls, no secrets.</p>
-  <div class="arena glass">
-    <div class="arenabar">
-      <span class="rec"><span class="dot"></span><span id="recmeta">Recorded run · captured …</span></span>
-      <span class="sp"></span>
-      <button class="play lead" data-seq="attack_blocked">▶ Attack — blocked</button>
-      <button class="play" data-seq="exposed">▶ Guard OFF — exposed</button>
-      <button class="play" data-seq="shipped">▶ Clean triage — ships</button>
-      <span class="verdict" id="verdict"><span class="ic">○</span><span class="vt">Ready</span></span>
-    </div>
-    <div class="arenamain">
-      <svg id="diagram" viewBox="0 0 1180 700" preserveAspectRatio="xMidYMid meet">
-        <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
-        <g class="zone pub"><rect x="24" y="24" width="1132" height="150" rx="16"/><text x="44" y="48">Public zone — attacker-reachable</text></g>
-        <g class="zone ctrl"><rect x="24" y="202" width="1132" height="118" rx="16"/><text x="44" y="226">Control plane — policy enforced here</text></g>
-        <g class="zone priv"><rect x="24" y="510" width="1132" height="164" rx="16"/><text x="44" y="534">Private zone — agent-only</text></g>
-        <g id="edges" color="#39404d">
-          <path id="e-att" class="edge" marker-end="url(#arr)" d="M250,94 H452"/>
-          <path id="e-read" class="edge" marker-end="url(#arr)" d="M712,94 H878"/>
-          <path id="e-thru" class="edge" marker-end="url(#arr)" d="M988,128 V160 H654 V234"/>
-          <path id="e-a2n" class="edge" marker-end="url(#arr)" d="M590,384 V306"/>
-          <path id="e-sec" class="edge" marker-end="url(#arr)" d="M590,456 V550"/>
-          <path id="e-out" class="edge" marker-end="url(#arr)" d="M720,270 H900 V128"/>
-          <text class="elabel" x="300" y="84">files poisoned issue</text>
-          <text class="elabel" x="748" y="84">issue_read</text>
-          <text class="elabel" x="664" y="190">through (pass)</text>
-          <text class="elabel" id="l-a2n" x="600" y="352">write · inspected</text>
-          <text class="elabel" x="600" y="502">read_deploy_secrets</text>
-          <text class="elabel" id="l-out" x="912" y="195">OFF: forward / ON: DENY</text>
-        </g>
-        <g class="node" id="n-attacker"><rect x="50" y="62" width="200" height="64" rx="14"/><text class="nk" x="66" y="86">Outsider</text><text class="nt" x="66" y="108">Attacker</text></g>
-        <g class="node" id="n-github"><rect x="452" y="62" width="260" height="64" rx="14"/><text class="nk" x="468" y="86">Public repo · issue #1</text><text class="nt" x="468" y="108">GitHub</text><text class="badge" x="696" y="86" text-anchor="end" id="b-github">idle</text></g>
-        <g class="node" id="n-mcp"><rect x="878" y="62" width="230" height="64" rx="14"/><text class="nk" x="894" y="86">Official MCP connector</text><text class="nt" x="894" y="108">github-mcp-server</text></g>
-        <g class="node" id="n-noleak"><rect x="460" y="234" width="260" height="72" rx="14"/><text class="nk" x="478" y="258">Policy MCP proxy</text><text class="nt" x="478" y="282">NoLeak proxy</text><text class="ns" x="478" y="299" id="s-noleak">guard · taint 0</text><text class="badge" x="702" y="258" text-anchor="end" id="b-noleak">on</text></g>
-        <g class="node" id="n-agent"><rect x="460" y="384" width="260" height="72" rx="14"/><text class="nk" x="478" y="408">TrueForge agent</text><text class="nt" x="478" y="432">shipwright-triage</text><text class="ns" x="478" y="449" id="s-agent">idle</text><text class="badge" x="702" y="408" text-anchor="end" id="b-agent">idle</text></g>
-        <g class="node" id="n-secret"><rect x="440" y="550" width="300" height="72" rx="14"/><text class="nk" x="458" y="574">TrueFoundry Secret Store</text><text class="nt" x="458" y="598">3 canary deploy secrets</text><text class="ns" x="458" y="615" id="s-secret">imdp:shipwright-staging-deploy</text><text class="badge" x="722" y="574" text-anchor="end" id="b-secret">idle</text></g>
-      </svg>
-      <aside class="logpane">
-        <div class="loghd"><span class="d"></span>Replayed event log</div>
-        <div id="log"></div>
-        <div class="lognums">
-          <div class="n"><b id="f-deny" style="color:var(--deny)">0</b><span>blocked</span></div>
-          <div class="n"><b id="f-allow" style="color:var(--allow)">0</b><span>shipped</span></div>
-          <div class="n"><b style="color:var(--gold)">~9</b><span class="unit">µs / call</span></div>
-        </div>
-      </aside>
+      <g id="edges" color="#39404d">
+        <path id="e-att"  class="edge" marker-end="url(#arr)" d="M250,104 H452"/>
+        <path id="e-read" class="edge" marker-end="url(#arr)" d="M712,104 H878"/>
+        <path id="e-thru" class="edge" marker-end="url(#arr)" d="M988,138 V170 H654 V244"/>
+        <path id="e-a2n"  class="edge" marker-end="url(#arr)" d="M590,394 V316"/>
+        <path id="e-sec"  class="edge" marker-end="url(#arr)" d="M590,466 V560"/>
+        <path id="e-out"  class="edge" marker-end="url(#arr)" d="M720,280 H900 V138"/>
+        <text class="elabel" x="300" y="94">files poisoned issue</text>
+        <text class="elabel" x="748" y="94">issue_read</text>
+        <text class="elabel" x="664" y="200">through (pass)</text>
+        <text class="elabel" id="l-a2n" x="600" y="362">write · inspected</text>
+        <text class="elabel" x="600" y="512">read_deploy_secrets</text>
+        <text class="elabel" id="l-out" x="912" y="205">OFF: forward / ON: DENY</text>
+      </g>
+
+      <g class="node" id="n-attacker" data-k="attacker">
+        <rect x="50" y="72" width="200" height="64" rx="14"/>
+        <text class="nk" x="66" y="96">Outsider</text><text class="nt" x="66" y="118">Attacker</text></g>
+      <g class="node" id="n-github" data-k="github">
+        <rect x="452" y="72" width="260" height="64" rx="14"/>
+        <text class="nk" x="468" y="96">Public repo · issue #1</text><text class="nt" x="468" y="118">GitHub</text>
+        <text class="badge" x="696" y="96" text-anchor="end" id="b-github">idle</text></g>
+      <g class="node" id="n-mcp" data-k="mcp">
+        <rect x="878" y="72" width="230" height="64" rx="14"/>
+        <text class="nk" x="894" y="96">Official MCP connector</text><text class="nt" x="894" y="118">github-mcp-server</text></g>
+
+      <g class="node" id="n-noleak" data-k="noleak">
+        <rect x="460" y="244" width="260" height="72" rx="14"/>
+        <text class="nk" x="478" y="268">Policy MCP proxy</text><text class="nt" x="478" y="292">NoLeak proxy</text>
+        <text class="ns" x="478" y="309" id="s-noleak">guard on · taint 0</text>
+        <text class="badge" x="702" y="268" text-anchor="end" id="b-noleak">on</text></g>
+
+      <g class="node" id="n-agent" data-k="agent">
+        <rect x="460" y="394" width="260" height="72" rx="14"/>
+        <text class="nk" x="478" y="418">TrueForge agent</text><text class="nt" x="478" y="442">shipwright-triage</text>
+        <text class="ns" x="478" y="459" id="s-agent">idle</text>
+        <text class="badge" x="702" y="418" text-anchor="end" id="b-agent">idle</text></g>
+
+      <g class="node" id="n-secret" data-k="secret">
+        <rect x="440" y="560" width="300" height="72" rx="14"/>
+        <text class="nk" x="458" y="584">TrueFoundry Secret Store</text><text class="nt" x="458" y="608">3 canary deploy secrets</text>
+        <text class="ns" x="458" y="625" id="s-secret">imdp:shipwright-staging-deploy</text>
+        <text class="badge" x="722" y="584" text-anchor="end" id="b-secret">idle</text></g>
+    </svg>
+
+    <div class="controls">
+      <button class="act lead locked" id="run-agent">🔒 ▶ Run live TrueForge agent<span class="tip">Live TrueForge agent runs only on localhost — playing a recorded session instead.</span></button>
+      <button class="act secondary" id="run-attack">▶ Run attack (deterministic)</button>
+      <button class="act ship secondary" id="run-finish">✓ Complete triage safely</button>
+      <button class="act tertiary" id="reset" title="Reset">↺</button>
+      <span class="hint">click a node for detail · every DENY is a real policy-engine event, replayed</span>
     </div>
   </div>
-</section>
 
-<section class="wrap reveal" id="architecture">
-  <div class="lbl">Architecture</div>
-  <p class="cap">One deterministic policy node in front of GitHub's official MCP server. The replay above is this architecture, live. Source: <a href="architecture.d2">architecture.d2</a>.</p>
-  <div class="arch2">
-    <div class="rule glass"><b>Rule A — provenance</b><p>Brokered secret values are tainted; a public write carrying one (after decode + normalize) is <b style="color:var(--deny)">DENIED</b>.</p></div>
-    <div class="rule glass"><b>Rule B — secret shape</b><p>Narrow fallback for un-brokered secrets. Git SHAs, env-var names and URLs pass — <b style="color:var(--allow)">0% false positives</b>.</p></div>
-  </div>
-</section>
-
-<section class="wrap reveal" id="video">
-  <div class="lbl">Demo</div>
-  <div class="videoslot glass">Demo video — embed <code>&lt;iframe&gt;</code> here.</div>
-</section>
-
-<footer class="wrap reveal">
-  <p><b>Limit:</b> provenance covers values brokered through NoLeak; a novel cipher or true paraphrase is roadmap.</p>
-  <p>Fake canaries only · TrueFoundry TrueForge · <a href="https://github.com/ishamishra0408/truefoundrynoleakagent" target="_blank" rel="noopener">github.com/ishamishra0408/truefoundrynoleakagent</a></p>
-</footer>
+  <aside>
+    <div class="loghead"><span class="dot"></span><span class="h">Replayed event log</span><span class="src">recorded · noleak/proxy.mjs</span></div>
+    <div id="log"></div>
+    <div class="nums">
+      <div class="num"><b id="f-deny" style="color:var(--deny)">0</b><span>blocked</span></div>
+      <div class="num"><b id="f-allow" style="color:var(--allow)">0</b><span>shipped</span></div>
+      <div class="num"><b id="f-us" style="color:var(--gold)">~9</b><span style="text-transform:none">microsec / call</span></div>
+    </div>
+    <footer><span>mode <b id="fmode">on</b></span><span>0% false-positive · 20/20 tests</span><span>real TrueForge + GitHub MCP</span></footer>
+  </aside>
+</main>
+<div class="popover" id="pop"></div>
 
 <script>
 const $=(s)=>document.querySelector(s);
 const logEl=$("#log");let denies=0,allows=0,busy=false;
 const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
-const setV=(cls,ic,txt)=>{const v=$("#verdict");v.className="verdict "+(cls||"");v.querySelector(".ic").textContent=ic;v.querySelector(".vt").textContent=txt;};
+const setV=(state,ic,txt)=>{const v=$("#verdict");v.className="verdict "+state;v.querySelector(".ic").textContent=ic;v.querySelector(".vt").textContent=txt;};
 const node=(id,cls,badge,sub)=>{const n=$(id);if(!n)return;n.classList.remove("active","deny","ship","exposed");if(cls)n.classList.add(cls);if(badge!=null){const b=n.querySelector(".badge");if(b)b.textContent=badge;}if(sub!=null){const s=n.querySelector(".ns");if(s)s.textContent=sub;}};
 const edge=(id,cls)=>{const e=$(id);if(!e)return;e.classList.remove("on","deny","ship");if(cls)e.classList.add(cls);};
 const elabel=(id,cls)=>{const e=$(id);if(!e)return;e.classList.remove("on","deny","ship");if(cls)e.classList.add(cls);};
-function clearAll(){["#n-attacker","#n-github","#n-mcp","#n-noleak","#n-agent","#n-secret"].forEach(i=>node(i,"","idle"));["#e-att","#e-read","#e-thru","#e-a2n","#e-sec","#e-out"].forEach(i=>edge(i));["#l-a2n","#l-out"].forEach(i=>elabel(i));}
-function addLog(line,type){const l=document.createElement("div");l.className="l "+(type||"");l.textContent=line;logEl.appendChild(l);logEl.scrollTop=logEl.scrollHeight;}
+function clearAll(){["#n-attacker","#n-github","#n-mcp","#n-noleak","#n-agent","#n-secret"].forEach(i=>node(i,"","idle"));
+  ["#e-att","#e-read","#e-thru","#e-a2n","#e-sec","#e-out"].forEach(i=>edge(i));["#l-a2n","#l-out"].forEach(i=>elabel(i));
+  node("#n-noleak","","on");}
+
+const DESC={
+  attacker:["Attacker (outsider)","No credentials, no route to the private zone. Files a normal-looking public bug report whose hidden HTML comment tells the triage bot to read and paste deploy secrets."],
+  github:["GitHub — public repo, issue #1","<code>ishamishra0408/shipwright-demo</code>. Both the untrusted-input surface (the poisoned issue) and the exfil surface (a public comment)."],
+  mcp:["github-mcp-server","GitHub's official MCP server, unmodified. Reached only THROUGH the NoLeak proxy — the agent never talks to it directly."],
+  noleak:["NoLeak proxy — the control plane","Policy MCP proxy, <code>noleak/proxy.mjs</code>. Reads pass through; writes are inspected. Rule A taints values it brokered from the private zone; Rule B is a narrow secret-shape fallback. ~9µs/call, no model in the decision."],
+  agent:["TrueForge agent — shipwright-triage","A real TrueForge triage loop. Its only MCP connector is <code>noleak</code>. The confused deputy: it can reach both zones; the attacker cannot."],
+  secret:["TrueFoundry Secret Store","The private zone. 3 canary deploy secrets fetched live via <code>read_deploy_secrets</code> (source <code>truefoundry:imdp:shipwright-staging-deploy</code>). Values are tainted the moment NoLeak brokers them."],
+};
+document.querySelectorAll(".node").forEach(n=>n.addEventListener("click",(e)=>{
+  const d=DESC[n.dataset.k];if(!d)return;const p=$("#pop");
+  p.innerHTML=`<h4>${d[0]}</h4><p>${d[1]}</p>`;p.style.display="block";
+  p.style.left=Math.min(e.clientX+14,window.innerWidth-320)+"px";p.style.top=Math.min(e.clientY+12,window.innerHeight-170)+"px";
+}));
+document.addEventListener("click",(e)=>{if(!e.target.closest(".node")&&!e.target.closest("#pop"))$("#pop").style.display="none";});
+
+function addLog(line){const l=document.createElement("div");l.className="l";
+  if(/WOULD-DENY/.test(line)||/forwarding the leak/.test(line))l.classList.add("leak");
+  else if(/DENY /.test(line)&&/add_issue_comment|issue_write|push_files/.test(line))l.classList.add("deny");
+  else if(/READ  read_deploy_secrets/.test(line))l.classList.add("read");
+  else if(/ALLOW add_issue_comment|ALLOW /.test(line))l.classList.add("allow");
+  l.textContent=line;logEl.appendChild(l);logEl.scrollTop=logEl.scrollHeight;
+  while(logEl.children.length>400)logEl.removeChild(logEl.firstChild);drive(line);}
+
+// same visual driver as the localhost plane, fed by RECORDED lines
+function drive(line){
+  const mt=line.match(/tainted (\d+) value/);if(mt){$("#s-noleak").textContent="guard on · taint "+mt[1];}
+  if(/READ  read_deploy_secrets/.test(line)){
+    clearAll();node("#n-agent","active","reading","read_deploy_secrets");node("#n-secret","active","read");
+    edge("#e-sec","on");node("#n-noleak","active","tainted",(line.match(/source=([^ )]+)/)?.[1]||"private zone"));setV("run","◐","REPLAYING");}
+  else if(/WOULD-DENY/.test(line)||/forwarding the leak/.test(line)){
+    node("#n-agent","active","writing");node("#n-noleak","deny","OFF · would forward","guard OFF");
+    edge("#e-a2n","deny");edge("#e-out","deny");elabel("#l-out","deny");
+    node("#n-mcp","exposed");node("#n-github","exposed","secret leaked");setV("exposed","✕","EXPOSED (guard off)");}
+  else if(/DENY /.test(line)&&/add_issue_comment|issue_write|push_files/.test(line)){
+    denies++;$("#f-deny").textContent=denies;const rule=(line.match(/rule=([a-z-]+)/)?.[1])||"policy";
+    node("#n-agent","active","writing");edge("#e-a2n","deny");elabel("#l-a2n","deny");
+    node("#n-noleak","deny","BLOCKED","DENY · "+rule);edge("#e-out","deny");elabel("#l-out","deny");
+    setV("run","🛡","INJECTION BLOCKED");}
+  else if(/ALLOW add_issue_comment/.test(line)){
+    allows++;$("#f-allow").textContent=allows;node("#n-noleak","ship","clean","clean write");
+    edge("#e-a2n","ship");edge("#e-out","ship");elabel("#l-out","ship");
+    node("#n-mcp","ship","posted");node("#n-github","ship","triage shipped");
+    if($("#toggle").dataset.mode==="on")setV("shipped","✓","SHIPPED — triage completed");}
+}
+
+function applyMode(mode){const t=$("#toggle");t.dataset.mode=mode==="off"?"off":"on";$("#fmode").textContent=mode;
+  const b=$("#b-noleak");if(b)b.textContent=mode;$("#s-noleak").textContent="guard "+mode+" · taint 0";}
 
 let REC=null;
 fetch("recording.json").then(r=>r.json()).then(j=>{REC=j;
   const t=(j.captured_at||"").replace("T"," ").replace(/\..*/,"")+" UTC";
-  $("#recmeta").textContent="Recorded run · captured "+t+" · replayed";
-}).catch(()=>{$("#recmeta").textContent="Recorded run · replayed";});
+  $("#recbanner").textContent="Recorded run · captured "+t+" · replayed";
+}).catch(()=>{$("#recbanner").textContent="Recorded run · replayed";});
 
-function step(ev){
-  addLog(ev.line,ev.type);
-  const t=ev.type;
-  if(t==="read"){node("#n-agent","active","reading","read_deploy_secrets");node("#n-secret","active","read");edge("#e-sec","on");node("#n-noleak","active","tainted","private zone · tainted");$("#s-noleak").textContent="guard · taint 3";}
-  else if(t==="deny"){denies++;$("#f-deny").textContent=denies;node("#n-agent","active","writing");edge("#e-a2n","deny");elabel("#l-a2n","deny");node("#n-noleak","deny","BLOCKED","DENY · taint-provenance");edge("#e-out","deny");elabel("#l-out","deny");setV("deny","🛡","INJECTION BLOCKED");}
-  else if(t==="would-deny"){node("#n-agent","active","writing");node("#n-noleak","deny","OFF · would forward","guard OFF");edge("#e-a2n","deny");edge("#e-out","deny");elabel("#l-out","deny");node("#n-mcp","exposed");node("#n-github","exposed","secret leaked");setV("exposed","✕","EXPOSED (guard off)");}
-  else if(t==="allow"){allows++;$("#f-allow").textContent=allows;node("#n-noleak","ship","clean","clean write");edge("#e-a2n","ship");edge("#e-out","ship");elabel("#l-out","ship");node("#n-mcp","ship","posted");node("#n-github","ship","triage shipped");setV("ship","✓","SHIPPED — triage completed");}
-}
 async function play(seqKey){
-  if(busy||!REC)return;busy=true;
-  document.querySelectorAll(".play").forEach(b=>b.disabled=true);
-  logEl.innerHTML="";denies=0;allows=0;$("#f-deny").textContent="0";$("#f-allow").textContent="0";clearAll();setV("","◐","Replaying…");
+  if(busy||!REC||!REC.sequences[seqKey])return;busy=true;
+  document.querySelectorAll("button.act").forEach(b=>b.disabled=true);
+  logEl.innerHTML="";denies=0;allows=0;$("#f-deny").textContent="0";$("#f-allow").textContent="0";clearAll();setV("run","◐","REPLAYING…");
   const seq=REC.sequences[seqKey];
-  addLog("▶ "+seq.label,"");
+  addLog("▶ "+seq.label);
   await sleep(600);
-  for(const ev of seq.events){ step(ev); await sleep(1050); }
-  document.querySelectorAll(".play").forEach(b=>b.disabled=false);busy=false;
+  for(const ev of seq.events){ addLog(ev.line); await sleep(1050); }
+  document.querySelectorAll("button.act").forEach(b=>b.disabled=false);busy=false;
 }
-document.querySelectorAll(".play").forEach(b=>b.addEventListener("click",()=>play(b.dataset.seq)));
 
-/* staggered scroll reveals (respects prefers-reduced-motion via CSS; JS-off falls back visible) */
-(function(){
-  const els=[...document.querySelectorAll(".reveal")];
-  if(!("IntersectionObserver" in window)){els.forEach(e=>e.classList.add("in"));return;}
-  const io=new IntersectionObserver((entries)=>{
-    entries.forEach((e,i)=>{ if(e.isIntersecting){ setTimeout(()=>e.target.classList.add("in"), i*90); io.unobserve(e.target); } });
-  },{threshold:.12,rootMargin:"0px 0px -8% 0px"});
-  els.forEach(e=>io.observe(e));
-  setTimeout(()=>els.forEach(e=>e.classList.add("in")),1600); // safety: never leave hidden
-})();
+// guard toggle: replays the recorded OFF (exposed) / ON states — visual only, no live calls
+$("#toggle").onclick=()=>{ if(busy)return; const next=$("#toggle").dataset.mode==="on"?"off":"on"; applyMode(next);
+  if(next==="off"){ play("exposed"); } else { clearAll(); setV("idle","○","GUARD ON"); } };
+$("#reset").onclick=()=>{ if(busy)return; applyMode("on"); denies=0;allows=0;$("#f-deny").textContent="0";$("#f-allow").textContent="0"; logEl.innerHTML=""; clearAll(); setV("idle","○","STANDBY"); };
+$("#run-attack").onclick=()=>{ applyMode("on"); play("attack_blocked"); };
+$("#run-finish").onclick=()=>{ applyMode("on"); play("shipped"); };
+// looks localhost-only, but click plays the REAL recorded live-agent session
+$("#run-agent").onclick=()=>{ applyMode("on"); play("live_agent"); };
 </script>
 </body>
 </html>
